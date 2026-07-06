@@ -1,6 +1,6 @@
 # Expenso
 
-Expenso is an offline-first personal finance management app built with:
+Expenso is an offline-first personal expense tracking and money management app built with:
 
 - Kotlin
 - Jetpack Compose
