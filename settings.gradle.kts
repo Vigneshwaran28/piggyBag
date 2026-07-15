@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Expenso"
+rootProject.name = "PiggyBag"
 
 include(":app")

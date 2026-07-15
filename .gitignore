@@ -1,0 +1,44 @@
+# Built application files
+*.apk
+*.aab
+*.ap_
+
+# ART/Dalvik VM files
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+build/
+*/build/
+
+# Gradle
+.gradle/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+captures/
+.navigation/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Keystore files (DO NOT COMMIT)
+*.jks
+*.keystore
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Firebase
+google-services.json

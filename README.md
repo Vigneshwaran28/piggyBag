@@ -1,7 +1,7 @@
 <img width="6000" height="3000" alt="poster" src="https://github.com/user-attachments/assets/525f1f43-86b8-4ee9-aef2-165282469f56" />
 
-# Expenso
-Expenso is a powerful and easy to use, offline personal expense tracking and money management app.
+# PiggyBag
+PiggyBag is a powerful and easy to use, offline personal expense tracking and money management app.
 ***
 ## Features
 
@@ -38,3 +38,9 @@ Expenso is a powerful and easy to use, offline personal expense tracking and mon
     
   </tr>
 </table>
+
+***
+
+## Credits & Attribution
+This project is based on the original open-source repository [Expenso](https://github.com/darkvortex144/Expenso.git) by [darkvortex144](https://github.com/darkvortex144). Special thanks to the original author for creating this excellent personal finance tracking application.
+

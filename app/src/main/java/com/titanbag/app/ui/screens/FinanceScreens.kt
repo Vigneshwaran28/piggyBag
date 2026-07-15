@@ -32,6 +32,14 @@ fun FinanceDashboardScreen(
     val transactions by viewModel.allBankTransactions.collectAsState()
     val summary by viewModel.bankFinancialSummary.collectAsState()
 
+    var selectedBankFilter by remember { mutableStateOf("All Banks") }
+    var selectedTypeFilter by remember { mutableStateOf("All Types") }
+
+    val filteredTransactions = transactions.filter {
+        (selectedBankFilter == "All Banks" || it.bankName == selectedBankFilter) &&
+        (selectedTypeFilter == "All Types" || it.type == selectedTypeFilter)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,6 +67,12 @@ fun FinanceDashboardScreen(
                 FinancialSummaryRow(summary.first, summary.second)
             }
 
+            if (accounts.isNotEmpty()) {
+                item {
+                    FinancialInsightsCard(accounts, transactions)
+                }
+            }
+
             item {
                 Text("Bank Accounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
@@ -68,16 +82,29 @@ fun FinanceDashboardScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Recent Bank Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Column {
+                    Text("Bank Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedTypeFilter == "CREDIT",
+                            onClick = { selectedTypeFilter = if (selectedTypeFilter == "CREDIT") "All Types" else "CREDIT" },
+                            label = { Text("Credits") }
+                        )
+                        FilterChip(
+                            selected = selectedTypeFilter == "DEBIT",
+                            onClick = { selectedTypeFilter = if (selectedTypeFilter == "DEBIT") "All Types" else "DEBIT" },
+                            label = { Text("Debits") }
+                        )
+                    }
                 }
             }
 
-            items(transactions.take(10)) { transaction ->
+            items(filteredTransactions) { transaction ->
                 BankTransactionItem(transaction)
             }
             
@@ -85,6 +112,42 @@ fun FinanceDashboardScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+}
+
+@Composable
+fun FinancialInsightsCard(accounts: List<BankAccount>, transactions: List<BankTransaction>) {
+    val highestSpendingBank = transactions.filter { it.type == "DEBIT" }
+        .groupBy { it.bankName }
+        .mapValues { it.value.sumOf { tx -> tx.amount } }
+        .maxByOrNull { it.value }?.key ?: "N/A"
+
+    val mostActiveAccount = transactions.groupBy { it.accountLastFour }
+        .maxByOrNull { it.value.size }?.let { entry ->
+            val bank = transactions.find { it.accountLastFour == entry.key }?.bankName ?: "Bank"
+            "$bank (..${entry.key})"
+        } ?: "N/A"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Financial Insights", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            
+            InsightRow("Highest Spending Bank", highestSpendingBank)
+            InsightRow("Most Active Account", mostActiveAccount)
+            InsightRow("Active Bank Accounts", accounts.size.toString())
+        }
+    }
+}
+
+@Composable
+fun InsightRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
     }
 }
 

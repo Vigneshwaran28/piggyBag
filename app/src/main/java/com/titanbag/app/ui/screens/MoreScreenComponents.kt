@@ -37,6 +37,66 @@ import com.titanbag.app.ui.theme.getFriendlyName
 import java.util.Locale
 
 @Composable
+fun ThemeModeSelector(settings: Settings?, viewModel: TitanBagViewModel) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Appearance Theme", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text("Adjust dark or light theme preferences", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val currentMode = settings?.themeMode ?: "system"
+                val modes = listOf(
+                    "system" to "SYSTEM",
+                    "light" to "LIGHT",
+                    "soft_dark" to "L-DARK",
+                    "dark" to "DARK",
+                    "pure_black" to "OLED"
+                )
+                modes.forEach { (mode, label) ->
+                    val isSelected = currentMode == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clickable {
+                                viewModel.updateSettings(mode, settings?.currency ?: "₹", settings?.notificationsEnabled ?: true, settings?.debtListEnabled ?: true)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 10.sp,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ThemePaletteSelection(settings: Settings?, viewModel: TitanBagViewModel) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -107,16 +167,18 @@ fun ThemePaletteSelection(settings: Settings?, viewModel: TitanBagViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Text("Manual Color Selection", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        
+        val context = androidx.compose.ui.platform.LocalContext.current
         val customColors = listOf(
             "#F44336", "#E91E63", "#9C27B0", "#673AB7", 
             "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
             "#009688", "#4CAF50", "#8BC34A", "#CDDC39",
-            "#FFEB3B", "#FFC107", "#FF9800", "#FF5722"
+            "#FFEB3B", "#FFC107", "#FF9800", "#FF5722",
+            "#FFFFFF", "#000000"
         )
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("Manual Primary/Icon Color", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        Spacer(modifier = Modifier.height(8.dp))
         
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -124,7 +186,7 @@ fun ThemePaletteSelection(settings: Settings?, viewModel: TitanBagViewModel) {
         ) {
             customColors.forEach { hex ->
                 val color = Color(android.graphics.Color.parseColor(hex))
-                val isSelected = settings?.colorPalette == "Custom" && settings?.customColor == hex
+                val isSelected = settings?.colorPalette == "Custom" && settings?.customIconColor == hex
                 
                 Box(
                     modifier = Modifier
@@ -133,10 +195,49 @@ fun ThemePaletteSelection(settings: Settings?, viewModel: TitanBagViewModel) {
                         .background(color)
                         .border(
                             width = if (isSelected) 2.dp else 1.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.LightGray.copy(alpha = 0.5f),
                             shape = CircleShape
                         )
-                        .clickable { viewModel.updateCustomColor(hex) }
+                        .clickable {
+                            if (hex == settings?.customBgColor) {
+                                android.widget.Toast.makeText(context, "Icon color cannot be the same as background color!", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.updateCustomColors(hex, settings?.customBgColor)
+                            }
+                        }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("Manual Card/Background Color", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            customColors.forEach { hex ->
+                val color = Color(android.graphics.Color.parseColor(hex))
+                val isSelected = settings?.colorPalette == "Custom" && settings?.customBgColor == hex
+                
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.LightGray.copy(alpha = 0.5f),
+                            shape = CircleShape
+                        )
+                        .clickable {
+                            if (hex == settings?.customIconColor) {
+                                android.widget.Toast.makeText(context, "Background color cannot be the same as icon color!", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.updateCustomColors(settings?.customIconColor, hex)
+                            }
+                        }
                 )
             }
         }

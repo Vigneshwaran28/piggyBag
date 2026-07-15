@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">TitanBag</string>
+    <string name="app_name">PiggyBag</string>
     <string name="theme_material_you">Material You</string>
     <string name="theme_catppuccin">Catppuccin</string>
     <string name="theme_cloudflare">Cloudflare</string>

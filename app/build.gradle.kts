@@ -6,17 +6,20 @@ plugins {
 }
 
 android {
-  namespace = "com.expenso.app"
+  namespace = "com.titanbag.app"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.expenso.app"
-    minSdk = 24
+    applicationId = "com.titanbag.app"
+    minSdk = 23
     targetSdk = 36
     versionCode = 1
     versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    
+    val googleClientId = project.findProperty("GOOGLE_WEB_CLIENT_ID") ?: "519040911729-h8a7636p84v7vltnvstd6p9q9n0nc66v.apps.googleusercontent.com"
+    buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
   }
 
   buildTypes {
@@ -60,6 +63,18 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.biometric)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services.auth)
+  implementation(libs.googleid)
+  implementation("androidx.credentials:credentials:1.5.0")
+  implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+  implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+  implementation(libs.zxing.core)
+  implementation(libs.barcode.scanning)
+  implementation(libs.androidx.camera.core)
+  implementation(libs.androidx.camera.camera2)
+  implementation(libs.androidx.camera.lifecycle)
+  implementation(libs.androidx.camera.view)
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -67,7 +82,7 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  // implementation(libs.coil.compose)
+  implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
   // implementation(libs.firebase.appcheck.recaptcha)
