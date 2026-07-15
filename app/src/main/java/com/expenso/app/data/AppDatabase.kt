@@ -14,9 +14,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Budget::class,
         SavingsGoal::class,
         RecurringTransaction::class,
-        Settings::class
+        Settings::class,
+        UserEntity::class,
+        PartnerEntity::class,
+        JournalEntity::class,
+        SyncQueueEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,6 +31,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun savingsGoalDao(): SavingsGoalDao
     abstract fun recurringTransactionDao(): RecurringTransactionDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun cloudUserDao(): CloudUserDao
+    abstract fun cloudPartnerDao(): CloudPartnerDao
+    abstract fun cloudJournalDao(): CloudJournalDao
+    abstract fun syncQueueDao(): SyncQueueDao
 
     companion object {
         @Volatile
@@ -89,7 +97,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "expenso_database"
+                    "titanbag_database"
                 )
                 .addCallback(DatabaseCallback())
                 .addMigrations(MIGRATION_4_5, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)

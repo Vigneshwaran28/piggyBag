@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.expenso.app.data.CloudJournalViewModel
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +62,7 @@ import com.expenso.app.ui.theme.getFriendlyName
 @Composable
 fun MoreScreen(
     viewModel: ExpensoViewModel,
+    cloudViewModel: CloudJournalViewModel,
     onExportCsv: () -> Unit,
     onImportCsv: () -> Unit,
     onExportPdf: () -> Unit,
@@ -70,7 +72,11 @@ fun MoreScreen(
     onNavigateToAddBudget: () -> Unit,
     onNavigateToAddGoal: () -> Unit,
     onNavigateToAddRecurring: () -> Unit,
-    onEditSavingsGoal: (SavingsGoal) -> Unit
+    onEditSavingsGoal: (SavingsGoal) -> Unit,
+    onNavigateToCloudDashboard: () -> Unit,
+    onNavigateToCloudPartner: () -> Unit,
+    onNavigateToCloudSync: () -> Unit,
+    onNavigateToCloudLogin: () -> Unit
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -334,6 +340,65 @@ fun MoreScreen(
                     }
                 }
 
+            }
+        }
+
+        // SECTION 2.5: CLOUD JOURNAL SHARING (NEON POSTGRESQL)
+        val cloudUser by cloudViewModel.currentUser.collectAsState(initial = null)
+        Text("Cloud Journal Sharing", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column {
+                if (cloudUser == null) {
+                    ExpensoMenuItem(
+                        icon = Icons.Rounded.CloudQueue,
+                        title = "Cloud Sign-In / Register",
+                        subtitle = "Sync expense journals with your partner",
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        iconBgColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        onClick = onNavigateToCloudLogin
+                    )
+                } else {
+                    ExpensoMenuItem(
+                        icon = Icons.Rounded.CloudQueue,
+                        title = "Cloud Shared Journal",
+                        subtitle = "View combined or partner journals",
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        iconBgColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        onClick = onNavigateToCloudDashboard
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ExpensoMenuItem(
+                        icon = Icons.Rounded.FavoriteBorder,
+                        title = "Connect Partner & Profile",
+                        subtitle = "View codes, link accounts",
+                        iconTint = MaterialTheme.colorScheme.secondary,
+                        iconBgColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                        onClick = onNavigateToCloudPartner
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ExpensoMenuItem(
+                        icon = Icons.Rounded.Sync,
+                        title = "Sync Configuration",
+                        subtitle = "Manage sync queues and settings",
+                        iconTint = MaterialTheme.colorScheme.tertiary,
+                        iconBgColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                        onClick = onNavigateToCloudSync
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ExpensoMenuItem(
+                        icon = Icons.Rounded.ExitToApp,
+                        title = "Cloud Log Out",
+                        subtitle = "Disconnect from cloud sync server",
+                        iconTint = MaterialTheme.colorScheme.error,
+                        iconBgColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                        onClick = { cloudViewModel.logout() }
+                    )
+                }
             }
         }
 

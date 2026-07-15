@@ -39,6 +39,7 @@ import com.expenso.app.ui.theme.MyApplicationTheme
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private val viewModel: ExpensoViewModel by viewModels()
+    private val cloudViewModel: CloudJournalViewModel by viewModels()
 
     // Export CSV Contract
     private val csvExportLauncher = registerForActivityResult(
@@ -153,9 +154,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 } else {
                     MainAppContent(
                         viewModel = viewModel,
-                        onExportCsv = { csvExportLauncher.launch("expenso_transactions.csv") },
+                        cloudViewModel = cloudViewModel,
+                        onExportCsv = { csvExportLauncher.launch("titanbag_transactions.csv") },
                         onImportCsv = { csvImportLauncher.launch("text/comma-separated-values") },
-                        onExportPdf = { pdfExportLauncher.launch("expenso_transactions.pdf") }
+                        onExportPdf = { pdfExportLauncher.launch("titanbag_transactions.pdf") }
                     )
                 }
             }
@@ -181,7 +183,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             })
 
         val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Expenso Secure Unlock")
+            .setTitle("TitanBag Secure Unlock")
             .setSubtitle("Authenticate using biometrics to access financial vault")
             .setNegativeButtonText("Use PIN / Cancel")
             .build()
@@ -204,6 +206,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 @Composable
 fun MainAppContent(
     viewModel: ExpensoViewModel,
+    cloudViewModel: CloudJournalViewModel,
     onExportCsv: () -> Unit,
     onImportCsv: () -> Unit,
     onExportPdf: () -> Unit
@@ -222,6 +225,8 @@ fun MainAppContent(
     var lastNonNullCategoryToEdit by remember { mutableStateOf<com.expenso.app.data.Category?>(null) }
     var selectedBudgetToEdit by remember { mutableStateOf<com.expenso.app.data.Budget?>(null) }
     var lastNonNullBudgetToEdit by remember { mutableStateOf<com.expenso.app.data.Budget?>(null) }
+    var selectedCloudJournalToEdit by remember { mutableStateOf<JournalEntity?>(null) }
+    var lastNonNullCloudJournalToEdit by remember { mutableStateOf<JournalEntity?>(null) }
 
     val activeFormState = remember {
         object : MutableState<String?> {
@@ -246,6 +251,7 @@ fun MainAppContent(
                                     "edit_category" -> selectedCategoryToEdit = null
                                     "edit_goal" -> selectedGoalToEdit = null
                                     "edit_budget" -> selectedBudgetToEdit = null
+                                    "edit_cloud_journal" -> selectedCloudJournalToEdit = null
                                 }
                             }
                             while (activeFormStack.size > index + 1) {
@@ -275,6 +281,7 @@ fun MainAppContent(
                     "edit_category" -> selectedCategoryToEdit = null
                     "edit_goal" -> selectedGoalToEdit = null
                     "edit_budget" -> selectedBudgetToEdit = null
+                    "edit_cloud_journal" -> selectedCloudJournalToEdit = null
                 }
             } else {
                 activeFormStack.clear()
@@ -283,6 +290,7 @@ fun MainAppContent(
                 selectedGoalToEdit = null
                 selectedCategoryToEdit = null
                 selectedBudgetToEdit = null
+                selectedCloudJournalToEdit = null
             }
         } else if (currentTab != 0) {
             viewModel.selectTab(0)
@@ -481,6 +489,7 @@ fun MainAppContent(
                         4 -> {
                             MoreScreen(
                                 viewModel = viewModel,
+                                cloudViewModel = cloudViewModel,
                                 onExportCsv = onExportCsv,
                                 onImportCsv = onImportCsv,
                                 onExportPdf = onExportPdf,
@@ -498,7 +507,11 @@ fun MainAppContent(
                                     selectedGoalToEdit = goal
                                     lastNonNullGoalToEdit = goal
                                     activeForm = "edit_goal"
-                                }
+                                },
+                                onNavigateToCloudDashboard = { activeForm = "cloud_dashboard" },
+                                onNavigateToCloudPartner = { activeForm = "cloud_partner" },
+                                onNavigateToCloudSync = { activeForm = "cloud_sync" },
+                                onNavigateToCloudLogin = { activeForm = "cloud_login" }
                             )
                         }
                     }
@@ -741,11 +754,67 @@ fun MainAppContent(
                     }
                     "add_recurring" -> {
                         RecurringTransactionForm(
-                            viewModel = viewModel,
-                            onDismiss = { activeForm = null }
-                        )
-                    }
-                }
+                                viewModel = viewModel,
+                                onDismiss = { activeForm = null }
+                           )
+                       }
+                       "cloud_login" -> {
+                           CloudLoginScreen(
+                               viewModel = cloudViewModel,
+                               onNavigateToRegister = { activeForm = "cloud_register" },
+                               onBack = { activeForm = null },
+                               onLoginSuccess = { activeForm = "cloud_dashboard" }
+                           )
+                       }
+                       "cloud_register" -> {
+                           CloudRegisterScreen(
+                               viewModel = cloudViewModel,
+                               onNavigateToLogin = { activeForm = "cloud_login" },
+                               onBack = { activeForm = "cloud_login" },
+                               onRegisterSuccess = { activeForm = "cloud_dashboard" }
+                           )
+                       }
+                       "cloud_dashboard" -> {
+                           CloudDashboardScreen(
+                               viewModel = cloudViewModel,
+                               onAddJournal = { activeForm = "add_cloud_journal" },
+                               onEditJournal = { journal ->
+                                   selectedCloudJournalToEdit = journal
+                                   lastNonNullCloudJournalToEdit = journal
+                                   activeForm = "edit_cloud_journal"
+                               },
+                               onBack = { activeForm = null }
+                           )
+                       }
+                       "cloud_partner" -> {
+                           PartnerProfileScreen(
+                               viewModel = cloudViewModel,
+                               onBack = { activeForm = null }
+                           )
+                       }
+                       "cloud_sync" -> {
+                           SyncStatusScreen(
+                               viewModel = cloudViewModel,
+                               onBack = { activeForm = null }
+                           )
+                       }
+                       "add_cloud_journal" -> {
+                           AddEditCloudJournalScreen(
+                               viewModel = cloudViewModel,
+                               onBack = { activeForm = "cloud_dashboard" }
+                           )
+                       }
+                       "edit_cloud_journal" -> {
+                           AddEditCloudJournalScreen(
+                               viewModel = cloudViewModel,
+                               journalToEdit = lastNonNullCloudJournalToEdit,
+                               onBack = {
+                                   activeForm = "cloud_dashboard"
+                                   selectedCloudJournalToEdit = null
+                               }
+                           )
+                       }
+                   }
             }
         }
 

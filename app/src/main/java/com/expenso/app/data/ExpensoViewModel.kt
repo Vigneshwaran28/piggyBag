@@ -18,7 +18,7 @@ class ExpensoViewModel(application: Application) : AndroidViewModel(application)
     private val repository = Repository(db)
 
     // --- SHARED PREFERENCES FOR PIN ---
-    private val prefs = application.getSharedPreferences("expenso_prefs", Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences("titanbag_prefs", Context.MODE_PRIVATE)
 
     // --- CUSTOM ACCOUNT TYPES STATE ---
     private val _accountTypes = MutableStateFlow<List<String>>(emptyList())
@@ -115,7 +115,7 @@ class ExpensoViewModel(application: Application) : AndroidViewModel(application)
     private val _isPinSet = MutableStateFlow(false)
     val isPinSet = _isPinSet.asStateFlow()
 
-    private val saltKey = "expenso_salt_key_12345"
+    private val saltKey = "titanbag_salt_key_12345"
 
     init {
         val pinHash = prefs.getString("pin_hash", null)
@@ -987,7 +987,7 @@ class ExpensoViewModel(application: Application) : AndroidViewModel(application)
                                 e.printStackTrace()
                             }
                         }
-                        canvas.drawText("EXPENSO", titleStartX, 54f, titlePaint)
+                        canvas.drawText("TITANBAG", titleStartX, 54f, titlePaint)
                         val currentDate = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                         canvas.drawText("Generated on: $currentDate", margin, 78f, subtitlePaint)
                         canvas.drawText("Total Transactions: ${txList.size}", margin, 92f, subtitlePaint)
@@ -1006,7 +1006,7 @@ class ExpensoViewModel(application: Application) : AndroidViewModel(application)
                                 e.printStackTrace()
                             }
                         }
-                        canvas.drawText("EXPENSO - Transactions Statement (Page ${pageIndex + 1})", titlePageStartX, 44f, boldTextPaint)
+                        canvas.drawText("TITANBAG - Transactions Statement (Page ${pageIndex + 1})", titlePageStartX, 44f, boldTextPaint)
                         paint.color = android.graphics.Color.parseColor("#006B5D") // Brand Teal
                         canvas.drawRect(margin, 52f, pageWidth - margin, 54f, paint)
                     }
