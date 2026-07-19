@@ -44,3 +44,6 @@ Thumbs.db
 google-services.json
 *.md
 !README.md
+
+# Batch files
+*.bat

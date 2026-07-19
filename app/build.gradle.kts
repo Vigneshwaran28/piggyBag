@@ -19,7 +19,7 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     
     val googleClientId = project.findProperty("GOOGLE_WEB_CLIENT_ID")?.toString() ?: ""
-    val cloudBaseUrl = project.findProperty("CLOUD_BASE_URL")?.toString() ?: "https://titanbag.onrender.com/"
+    val cloudBaseUrl = project.findProperty("CLOUD_BASE_URL")?.toString() ?: ""
 
     buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
     buildConfigField("String", "CLOUD_BASE_URL", "\"$cloudBaseUrl\"")
