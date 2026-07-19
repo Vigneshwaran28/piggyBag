@@ -1091,7 +1091,7 @@ fun SyncStatusScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Set backend endpoint for PostgreSQL sync connection. Use https://titanbag.onrender.com/ for production.",
+                        "Set backend endpoint for PostgreSQL sync connection.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
