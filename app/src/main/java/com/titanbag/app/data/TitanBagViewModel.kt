@@ -10,9 +10,16 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+data class NotificationEvent(
+    val title: String,
+    val message: String,
+    val destination: String? = null
+)
 
 class TitanBagViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -25,6 +32,107 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
 
     // --- CURRENT LOCAL USER STATE ---
     val currentUserId = MutableStateFlow("default_user")
+
+    private val sessionManager = SessionManager(application)
+
+    // --- FONT STYLE STATE ---
+    private val _fontStyle = MutableStateFlow(sessionManager.getFontStyle())
+    val fontStyle = _fontStyle.asStateFlow()
+
+    fun updateFontStyle(style: String) {
+        sessionManager.setFontStyle(style)
+        _fontStyle.value = style
+    }
+
+    // --- VISUAL STYLE STATE ---
+    private val _visualStyle = MutableStateFlow(sessionManager.getVisualStyle())
+    val visualStyle = _visualStyle.asStateFlow()
+
+    fun updateVisualStyle(style: String) {
+        sessionManager.setVisualStyle(style)
+        _visualStyle.value = style
+    }
+
+    // --- PDF EXPORT OPTIONS STATE ---
+    val pdfDateRange = MutableStateFlow(sessionManager.getPdfDateRange())
+    val pdfCustomStartDate = MutableStateFlow(sessionManager.getPdfCustomStartDate())
+    val pdfCustomEndDate = MutableStateFlow(sessionManager.getPdfCustomEndDate())
+    val pdfDateFormat = MutableStateFlow(sessionManager.getPdfDateFormat())
+    val pdfTimeFormat = MutableStateFlow(sessionManager.getPdfTimeFormat())
+    
+    val pdfIncludeNotes = MutableStateFlow(sessionManager.getPdfIncludeNotes())
+    val pdfIncludeCategories = MutableStateFlow(sessionManager.getPdfIncludeCategories())
+    val pdfIncludeAccount = MutableStateFlow(sessionManager.getPdfIncludeAccount())
+    val pdfIncludeRunningBalance = MutableStateFlow(sessionManager.getPdfIncludeRunningBalance())
+    val pdfIncludeSummary = MutableStateFlow(sessionManager.getPdfIncludeSummary())
+    val pdfIncludeTransactionIds = MutableStateFlow(sessionManager.getPdfIncludeTransactionIds())
+
+    fun updatePdfExportOptions(
+        range: String,
+        start: Long,
+        end: Long,
+        dateFormat: String,
+        timeFormat: String,
+        incNotes: Boolean,
+        incCats: Boolean,
+        incAcc: Boolean,
+        incBalance: Boolean,
+        incSummary: Boolean,
+        incIds: Boolean
+    ) {
+        sessionManager.setPdfDateRange(range)
+        sessionManager.setPdfCustomStartDate(start)
+        sessionManager.setPdfCustomEndDate(end)
+        sessionManager.setPdfDateFormat(dateFormat)
+        sessionManager.setPdfTimeFormat(timeFormat)
+        sessionManager.setPdfIncludeNotes(incNotes)
+        sessionManager.setPdfIncludeCategories(incCats)
+        sessionManager.setPdfIncludeAccount(incAcc)
+        sessionManager.setPdfIncludeRunningBalance(incBalance)
+        sessionManager.setPdfIncludeSummary(incSummary)
+        sessionManager.setPdfIncludeTransactionIds(incIds)
+
+        pdfDateRange.value = range
+        pdfCustomStartDate.value = start
+        pdfCustomEndDate.value = end
+        pdfDateFormat.value = dateFormat
+        pdfTimeFormat.value = timeFormat
+        pdfIncludeNotes.value = incNotes
+        pdfIncludeCategories.value = incCats
+        pdfIncludeAccount.value = incAcc
+        pdfIncludeRunningBalance.value = incBalance
+        pdfIncludeSummary.value = incSummary
+        pdfIncludeTransactionIds.value = incIds
+    }
+
+    // --- CUSTOM COLOR STATES ---
+    private val _customColorPrimary = MutableStateFlow(sessionManager.getCustomColorPrimary())
+    val customColorPrimary = _customColorPrimary.asStateFlow()
+
+    private val _customColorSecondary = MutableStateFlow(sessionManager.getCustomColorSecondary())
+    val customColorSecondary = _customColorSecondary.asStateFlow()
+
+    private val _customColorBackground = MutableStateFlow(sessionManager.getCustomColorBackground())
+    val customColorBackground = _customColorBackground.asStateFlow()
+
+    fun updateCustomColors(primary: String?, secondary: String?, background: String?) {
+        sessionManager.setCustomColorPrimary(primary)
+        sessionManager.setCustomColorSecondary(secondary)
+        sessionManager.setCustomColorBackground(background)
+        _customColorPrimary.value = primary
+        _customColorSecondary.value = secondary
+        _customColorBackground.value = background
+    }
+
+    // --- NAVIGATION SharedFlow ---
+    private val _navigationCommand = MutableSharedFlow<String>()
+    val navigationCommand = _navigationCommand.asSharedFlow()
+
+    fun navigateTo(destination: String) {
+        viewModelScope.launch {
+            _navigationCommand.emit(destination)
+        }
+    }
 
     // Bank related flows
     val allBankTransactions = financeRepository.allBankTransactionsFlow
@@ -144,7 +252,13 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     private val _isPinSet = MutableStateFlow(false)
     val isPinSet = _isPinSet.asStateFlow()
 
-    private val saltKey = "titanbag_salt_key_12345"
+    private val saltKey: String by lazy {
+        val existing = prefs?.getString("secure_salt", null)
+        if (existing != null) return@lazy existing
+        val newSalt = UUID.randomUUID().toString()
+        prefs?.edit()?.putString("secure_salt", newSalt)?.apply()
+        newSalt
+    }
 
     init {
         val pinHash = prefs.getString("pin_hash", null)
@@ -244,6 +358,9 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         }
 
         checkDebtReminders()
+        triggerGoldSilverPricesUpdate()
+        checkScheduledReminders()
+        executeDueAutoPays()
     }
 
     fun setPin(pin: String) {
@@ -295,29 +412,26 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val allAccounts = currentUserId.flatMapLatest { userId ->
         repository.getAccountsForUser(userId)
-    }.onEach { list -> saveCachedAccounts(list) }
-        .stateIn(
+    }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = loadCachedAccounts()
+            initialValue = emptyList()
         )
 
     val allCategories = repository.allCategories
-        .onEach { list -> saveCachedCategories(list) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = loadCachedCategories()
+            initialValue = emptyList()
         )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val allTransactions = currentUserId.flatMapLatest { userId ->
         repository.getTransactionsForUser(userId)
-    }.onEach { list -> saveCachedTransactions(list) }
-        .stateIn(
+    }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = loadCachedTransactions()
+            initialValue = emptyList()
         )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -371,6 +485,35 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
             initialValue = getInitialSettings()
         )
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allVehicles = currentUserId.flatMapLatest { userId ->
+        repository.allVehicles
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allInvestments = currentUserId.flatMapLatest { userId ->
+        repository.allInvestments
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allSubscriptions = currentUserId.flatMapLatest { userId ->
+        repository.allSubscriptions
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allReminders = currentUserId.flatMapLatest { userId ->
+        repository.allReminders
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allLifeAreas = repository.allLifeAreas.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allSubcategories = repository.allSubcategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allPurposes = repository.allPurposes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allAutoPays = repository.allAutoPays.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val insights = combine(allTransactions, allInvestments, allReminders, settings) { txs, invs, rems, setts ->
+        SmartInsightsEngine.generateInsights(txs, invs, rems, setts?.currency ?: "₹")
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // --- SEARCH AND FILTER MUTABLES ---
     val searchQuery = MutableStateFlow("")
     val filterType = MutableStateFlow("All") // All, Income, Expense
@@ -408,7 +551,7 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     // REACIVE FILTERED TRANSACTIONS
     val filteredTransactions: StateFlow<List<TransactionWithDetails>> = combine(
         allTransactions,
-        searchQuery,
+        searchQuery.debounce(250),
         filterType,
         filterCategoryIds,
         filterAccountIds,
@@ -491,7 +634,7 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     )
 
     // --- LOCAL NOTIFICATION FEEDBACK ---
-    private val _notificationMessage = MutableSharedFlow<String>()
+    private val _notificationMessage = MutableSharedFlow<NotificationEvent>()
     val notificationMessage = _notificationMessage.asSharedFlow()
 
     data class SnackbarEvent(
@@ -515,10 +658,10 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun triggerLocalNotification(message: String) {
+    fun triggerLocalNotification(message: String, title: String = "PiggyBag Alert", destination: String? = null) {
         viewModelScope.launch {
             if (settings.value?.notificationsEnabled == true) {
-                _notificationMessage.emit(message)
+                _notificationMessage.emit(NotificationEvent(title, message, destination))
             }
         }
     }
@@ -541,7 +684,17 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         note: String,
         dateStr: String, // format "yyyy-MM-dd"
         attachmentPath: String? = null,
-        tags: String = ""
+        tags: String = "",
+        lifeAreaId: Int? = null,
+        subcategoryId: Int? = null,
+        purposeId: Int? = null,
+        paidBy: String? = null,
+        spentFor: String? = null,
+        peopleTagged: String? = null,
+        vehicleId: Int? = null,
+        odometer: Double? = null,
+        fuelQuantity: Double? = null,
+        studentName: String? = null
     ) {
         viewModelScope.launch {
             val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
@@ -557,9 +710,27 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 updatedAt = nowStr,
                 attachmentPath = attachmentPath,
                 tags = tags,
-                userId = currentUserId.value
+                userId = currentUserId.value,
+                lifeAreaId = lifeAreaId,
+                subcategoryId = subcategoryId,
+                purposeId = purposeId,
+                paidBy = paidBy,
+                spentFor = spentFor,
+                peopleTagged = peopleTagged,
+                vehicleId = vehicleId,
+                odometer = odometer,
+                fuelQuantity = fuelQuantity,
+                studentName = studentName
             )
             repository.insertTransaction(tx)
+
+            // Update Vehicle Odometer if applicable
+            if (vehicleId != null && odometer != null) {
+                val vehicle = repository.getVehicleById(vehicleId)
+                if (vehicle != null && odometer > vehicle.lastOdometer) {
+                    repository.updateVehicle(vehicle.copy(lastOdometer = odometer))
+                }
+            }
             
             // Trigger check for budget limits
             checkBudgetLimits(categoryId, type, amount, dateStr)
@@ -575,7 +746,17 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         note: String,
         dateStr: String,
         attachmentPath: String? = null,
-        tags: String = ""
+        tags: String = "",
+        lifeAreaId: Int? = null,
+        subcategoryId: Int? = null,
+        purposeId: Int? = null,
+        paidBy: String? = null,
+        spentFor: String? = null,
+        peopleTagged: String? = null,
+        vehicleId: Int? = null,
+        odometer: Double? = null,
+        fuelQuantity: Double? = null,
+        studentName: String? = null
     ) {
         viewModelScope.launch {
             val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
@@ -592,9 +773,27 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 updatedAt = nowStr,
                 attachmentPath = attachmentPath,
                 tags = tags,
-                userId = currentUserId.value
+                userId = currentUserId.value,
+                lifeAreaId = lifeAreaId,
+                subcategoryId = subcategoryId,
+                purposeId = purposeId,
+                paidBy = paidBy,
+                spentFor = spentFor,
+                peopleTagged = peopleTagged,
+                vehicleId = vehicleId,
+                odometer = odometer,
+                fuelQuantity = fuelQuantity,
+                studentName = studentName
             )
             repository.updateTransaction(tx)
+
+            // Update Vehicle Odometer if applicable
+            if (vehicleId != null && odometer != null) {
+                val vehicle = repository.getVehicleById(vehicleId)
+                if (vehicle != null && odometer > vehicle.lastOdometer) {
+                    repository.updateVehicle(vehicle.copy(lastOdometer = odometer))
+                }
+            }
         }
     }
 
@@ -611,34 +810,54 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     }
 
     // Accounts
-    fun insertAccount(name: String, type: String, openingBalance: Double, color: String, icon: String) {
+    fun insertAccount(name: String, type: String, openingBalance: Double, color: String, icon: String, onSuccess: () -> Unit = {}, onFailure: (String) -> Unit = {}) {
         viewModelScope.launch {
+            val normalizedName = name.trim().lowercase()
+            val userId = currentUserId.value
+            val existing = repository.getAccountsForUser(userId).first()
+            val isDuplicate = existing.any { it.name.trim().lowercase() == normalizedName }
+            if (isDuplicate) {
+                showSnackbar("An account with this name already exists.")
+                onFailure("An account with this name already exists.")
+                return@launch
+            }
             val account = Account(
-                name = name,
+                name = name.trim(),
                 type = type,
                 openingBalance = openingBalance,
                 currentBalance = openingBalance,
                 color = color,
                 icon = icon,
-                userId = currentUserId.value
+                userId = userId
             )
             repository.insertAccount(account)
+            onSuccess()
         }
     }
 
-    fun updateAccount(id: Int, name: String, type: String, openingBalance: Double, currentBalance: Double, color: String, icon: String) {
+    fun updateAccount(id: Int, name: String, type: String, openingBalance: Double, currentBalance: Double, color: String, icon: String, onSuccess: () -> Unit = {}, onFailure: (String) -> Unit = {}) {
         viewModelScope.launch {
+            val normalizedName = name.trim().lowercase()
+            val userId = currentUserId.value
+            val existing = repository.getAccountsForUser(userId).first()
+            val isDuplicate = existing.any { it.name.trim().lowercase() == normalizedName && it.id != id }
+            if (isDuplicate) {
+                showSnackbar("An account with this name already exists.")
+                onFailure("An account with this name already exists.")
+                return@launch
+            }
             val account = Account(
                 id = id,
-                name = name,
+                name = name.trim(),
                 type = type,
                 openingBalance = openingBalance,
                 currentBalance = currentBalance,
                 color = color,
                 icon = icon,
-                userId = currentUserId.value
+                userId = userId
             )
             repository.updateAccount(account)
+            onSuccess()
         }
     }
 
@@ -796,7 +1015,7 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     }
 
     // Recurring Rules
-    fun insertRecurringRule(amount: Double, type: String, categoryId: Int, accountId: Int, note: String, frequency: String, startDate: String) {
+    fun insertRecurringRule(amount: Double, type: String, categoryId: Int, accountId: Int, note: String, frequency: String, startDate: String, endConditionType: String = "never", endConditionValue: String = "") {
         viewModelScope.launch {
             val rule = RecurringTransaction(
                 amount = amount,
@@ -807,7 +1026,9 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 frequency = frequency,
                 nextExecutionDate = startDate,
                 enabled = true,
-                userId = currentUserId.value
+                userId = currentUserId.value,
+                endConditionType = endConditionType,
+                endConditionValue = endConditionValue
             )
             repository.insertRecurringTransaction(rule)
         }
@@ -826,7 +1047,13 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     }
 
     // Settings
-    fun updateSettings(themeMode: String, currency: String, notificationsEnabled: Boolean, debtListEnabled: Boolean = true) {
+    fun updateSettings(
+        themeMode: String,
+        currency: String,
+        notificationsEnabled: Boolean,
+        debtListEnabled: Boolean = false,
+        bottomTabs: String? = null
+    ) {
         viewModelScope.launch {
             val current = repository.getSettingsDirect() ?: Settings()
             repository.updateSettings(
@@ -834,9 +1061,359 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                     themeMode = themeMode,
                     currency = currency,
                     notificationsEnabled = notificationsEnabled,
-                    debtListEnabled = debtListEnabled
+                    debtListEnabled = debtListEnabled,
+                    bottomTabs = bottomTabs ?: current.bottomTabs
                 )
             )
+        }
+    }
+
+    // --- VEHICLES ---
+    fun insertVehicle(nickname: String, regNo: String, type: String, fuelType: String, purchaseDate: String, insExpiry: String?, polExpiry: String?, roadTaxExpiry: String?, serviceDate: String?, odometer: Double) {
+        viewModelScope.launch {
+            val vehicle = Vehicle(
+                registrationNumber = regNo,
+                nickname = nickname,
+                type = type,
+                fuelType = fuelType,
+                purchaseDate = purchaseDate,
+                insuranceExpiryDate = insExpiry,
+                pollutionExpiryDate = polExpiry,
+                roadTaxExpiryDate = roadTaxExpiry,
+                lastServiceDate = serviceDate,
+                lastOdometer = odometer,
+                userId = currentUserId.value
+            )
+            repository.insertVehicle(vehicle)
+        }
+    }
+
+    fun updateVehicle(id: Int, nickname: String, regNo: String, type: String, fuelType: String, purchaseDate: String, insExpiry: String?, polExpiry: String?, roadTaxExpiry: String?, serviceDate: String?, odometer: Double) {
+        viewModelScope.launch {
+            val vehicle = Vehicle(
+                id = id,
+                registrationNumber = regNo,
+                nickname = nickname,
+                type = type,
+                fuelType = fuelType,
+                purchaseDate = purchaseDate,
+                insuranceExpiryDate = insExpiry,
+                pollutionExpiryDate = polExpiry,
+                roadTaxExpiryDate = roadTaxExpiry,
+                lastServiceDate = serviceDate,
+                lastOdometer = odometer,
+                userId = currentUserId.value
+            )
+            repository.updateVehicle(vehicle)
+        }
+    }
+
+    fun deleteVehicle(vehicle: Vehicle) {
+        viewModelScope.launch {
+            repository.deleteVehicle(vehicle)
+        }
+    }
+
+    // --- INVESTMENTS ---
+    fun insertInvestment(name: String, type: String, purchaseDate: String, purchasePrice: Double, qty: Double, broker: String?, charges: Double, notes: String?) {
+        viewModelScope.launch {
+            val investment = Investment(
+                name = name,
+                type = type,
+                purchaseDate = purchaseDate,
+                purchasePrice = purchasePrice,
+                quantity = qty,
+                broker = broker,
+                transactionCharges = charges,
+                notes = notes,
+                userId = currentUserId.value
+            )
+            val id = repository.insertInvestment(investment)
+            
+            // Trigger gold/silver fetching if gold/silver
+            if (type.equals("Gold", ignoreCase = true) || type.equals("Silver", ignoreCase = true)) {
+                triggerGoldSilverPricesUpdate()
+            }
+        }
+    }
+
+    fun updateInvestment(id: Int, name: String, type: String, purchaseDate: String, purchasePrice: Double, qty: Double, broker: String?, charges: Double, currentPrice: Double, status: String, notes: String?) {
+        viewModelScope.launch {
+            val investment = Investment(
+                id = id,
+                name = name,
+                type = type,
+                purchaseDate = purchaseDate,
+                purchasePrice = purchasePrice,
+                quantity = qty,
+                broker = broker,
+                transactionCharges = charges,
+                currentPrice = currentPrice,
+                currentStatus = status,
+                notes = notes,
+                userId = currentUserId.value
+            )
+            repository.updateInvestment(investment)
+        }
+    }
+
+    fun deleteInvestment(investment: Investment) {
+        viewModelScope.launch {
+            repository.deleteInvestment(investment)
+        }
+    }
+
+    // --- SUBSCRIPTIONS ---
+    fun insertSubscription(name: String, amount: Double, cycle: String, start: String, nextRenewal: String, accId: Int?) {
+        viewModelScope.launch {
+            val sub = Subscription(
+                name = name,
+                amount = amount,
+                billingCycle = cycle,
+                startDate = start,
+                nextRenewalDate = nextRenewal,
+                accountId = accId,
+                userId = currentUserId.value
+            )
+            repository.insertSubscription(sub)
+        }
+    }
+
+    fun updateSubscription(id: Int, name: String, amount: Double, cycle: String, start: String, nextRenewal: String, accId: Int?, status: String) {
+        viewModelScope.launch {
+            val sub = Subscription(
+                id = id,
+                name = name,
+                amount = amount,
+                billingCycle = cycle,
+                startDate = start,
+                nextRenewalDate = nextRenewal,
+                accountId = accId,
+                status = status,
+                userId = currentUserId.value
+            )
+            repository.updateSubscription(sub)
+        }
+    }
+
+    fun deleteSubscription(sub: Subscription) {
+        viewModelScope.launch {
+            repository.deleteSubscription(sub)
+        }
+    }
+
+    // --- REMINDERS ---
+    fun insertReminder(title: String, type: String, dueDate: String, amount: Double?, recurrence: String) {
+        viewModelScope.launch {
+            val reminder = Reminder(
+                title = title,
+                type = type,
+                dueDate = dueDate,
+                amount = amount,
+                recurrence = recurrence,
+                enabled = true,
+                userId = currentUserId.value
+            )
+            repository.insertReminder(reminder)
+        }
+    }
+
+    fun updateReminder(id: Int, title: String, type: String, dueDate: String, amount: Double?, recurrence: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val reminder = Reminder(
+                id = id,
+                title = title,
+                type = type,
+                dueDate = dueDate,
+                amount = amount,
+                recurrence = recurrence,
+                enabled = enabled,
+                userId = currentUserId.value
+            )
+            repository.updateReminder(reminder)
+        }
+    }
+
+    fun deleteReminder(reminder: Reminder) {
+        viewModelScope.launch {
+            repository.deleteReminder(reminder)
+        }
+    }
+
+    // --- GOLD & SILVER PRICE FETCHERS ---
+    fun triggerGoldSilverPricesUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                // Fetch direct or use fallback
+                val goldRate = GoldSilverFetcher.fetchPricePerGramInInr("Gold", todayStr)
+                val silverRate = GoldSilverFetcher.fetchPricePerGramInInr("Silver", todayStr)
+                repository.insertPrice(
+                    GoldSilverPrice(
+                        date = todayStr,
+                        goldPrice = goldRate,
+                        silverPrice = silverRate,
+                        fetchedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).format(Date())
+                    )
+                )
+                
+                // Update active gold & silver investments' current price
+                val investments = repository.allInvestments.first()
+                investments.forEach { inv ->
+                    if (inv.type.equals("Gold", ignoreCase = true)) {
+                        repository.updateInvestment(inv.copy(currentPrice = goldRate))
+                    } else if (inv.type.equals("Silver", ignoreCase = true)) {
+                        repository.updateInvestment(inv.copy(currentPrice = silverRate))
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun fetchHistoricalPriceForInvestment(type: String, dateStr: String, onPriceFetched: (Double) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val rate = GoldSilverFetcher.fetchPricePerGramInInr(type, dateStr)
+            onPriceFetched(rate)
+        }
+    }
+
+    // --- REMINDER CHECK SCHEDULER ---
+    fun checkScheduledReminders() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+            val activeReminders = repository.getActiveRemindersDirect()
+            activeReminders.forEach { rem ->
+                if (rem.dueDate <= todayStr) {
+                    // Trigger notification
+                    triggerLocalNotification(
+                        title = "Reminder: ${rem.title}",
+                        message = "Your ${rem.type} is due! Amount: ${settings.value?.currency ?: "₹"}${rem.amount ?: 0.0}. Due date: ${rem.dueDate}",
+                        destination = "reminders"
+                    )
+                    // If it is recurring, update next due date!
+                    if (rem.recurrence != "None") {
+                        val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val d = format.parse(rem.dueDate)
+                        if (d != null) {
+                            val c = Calendar.getInstance().apply { time = d }
+                            when (rem.recurrence) {
+                                "Daily" -> c.add(Calendar.DAY_OF_YEAR, 1)
+                                "Weekly" -> c.add(Calendar.WEEK_OF_YEAR, 1)
+                                "Monthly" -> c.add(Calendar.MONTH, 1)
+                                "Yearly" -> c.add(Calendar.YEAR, 1)
+                            }
+                            repository.updateReminder(rem.copy(dueDate = format.format(c.time)))
+                        }
+                    } else {
+                        // Mark as disabled
+                        repository.updateReminder(rem.copy(enabled = false))
+                    }
+                }
+            }
+        }
+    }
+
+    fun insertAutoPay(autoPay: AutoPay) {
+        viewModelScope.launch {
+            repository.insertAutoPay(autoPay)
+            executeDueAutoPays()
+        }
+    }
+
+    fun updateAutoPay(autoPay: AutoPay) {
+        viewModelScope.launch {
+            repository.updateAutoPay(autoPay)
+            executeDueAutoPays()
+        }
+    }
+
+    fun deleteAutoPay(autoPay: AutoPay) {
+        viewModelScope.launch {
+            repository.deleteAutoPay(autoPay)
+        }
+    }
+
+    fun executeDueAutoPays() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val activeAutoPays = repository.getActiveAutoPaysDirect()
+                activeAutoPays.forEach { ap ->
+                    if (ap.nextExecutionDate <= todayStr) {
+                        // Check if end date is reached
+                        if (ap.endDate != null && todayStr > ap.endDate) {
+                            repository.updateAutoPay(ap.copy(status = "Completed"))
+                            return@forEach
+                        }
+
+                        val account = repository.getAccountById(ap.accountId)
+                        if (account != null) {
+                            if (account.currentBalance >= ap.amount) {
+                                val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+                                val note = "${ap.name} (Created by AutoPay, Linked AutoPay ID: ${ap.id}, Execution Timestamp: ${nowStr})"
+                                val tx = Transaction(
+                                    amount = ap.amount,
+                                    type = "expense",
+                                    categoryId = ap.categoryId,
+                                    accountId = ap.accountId,
+                                    note = note,
+                                    transactionDate = ap.nextExecutionDate + "T09:00:00",
+                                    createdAt = nowStr,
+                                    updatedAt = nowStr,
+                                    userId = currentUserId.value
+                                )
+                                repository.insertTransaction(tx)
+                                repository.updateAccount(account.copy(currentBalance = account.currentBalance - ap.amount))
+
+                                val nextDate = calculateNextExecutionDate(ap.nextExecutionDate, ap.frequency)
+                                repository.updateAutoPay(
+                                    ap.copy(
+                                        lastExecutedDate = todayStr,
+                                        nextExecutionDate = nextDate,
+                                        status = if (ap.endDate != null && nextDate > ap.endDate) "Completed" else "Active"
+                                    )
+                                )
+
+                                triggerLocalNotification(
+                                    title = "AutoPay Executed: ${ap.name}",
+                                    message = "Successfully paid ${settings.value?.currency ?: "₹"}${ap.amount} from ${account.name}."
+                                )
+                            } else {
+                                triggerLocalNotification(
+                                    title = "AutoPay Failed: ${ap.name}",
+                                    message = "Insufficient balance in account '${account.name}'. Required: ${settings.value?.currency ?: "₹"}${ap.amount}, Available: ${settings.value?.currency ?: "₹"}${account.currentBalance}."
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun calculateNextExecutionDate(currentDateStr: String, frequency: String): String {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return try {
+            val date = format.parse(currentDateStr) ?: Date()
+            val calendar = Calendar.getInstance().apply { time = date }
+            when (frequency) {
+                "Daily" -> calendar.add(Calendar.DAY_OF_YEAR, 1)
+                "Weekly" -> calendar.add(Calendar.WEEK_OF_YEAR, 1)
+                "Monthly" -> calendar.add(Calendar.MONTH, 1)
+                "Every 2 Months" -> calendar.add(Calendar.MONTH, 2)
+                "Every 3 Months" -> calendar.add(Calendar.MONTH, 3)
+                "Quarterly" -> calendar.add(Calendar.MONTH, 3)
+                "Half Yearly" -> calendar.add(Calendar.MONTH, 6)
+                "Yearly" -> calendar.add(Calendar.YEAR, 1)
+                else -> calendar.add(Calendar.DAY_OF_YEAR, 30)
+            }
+            format.format(calendar.time)
+        } catch (e: Exception) {
+            currentDateStr
         }
     }
 
@@ -871,6 +1448,20 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                     colorPalette = "Custom",
                     customIconColor = iconColorHex,
                     customBgColor = bgColorHex
+                )
+            )
+        }
+    }
+
+    fun updateCustomColorsAll(primary: String?, secondary: String?, background: String?) {
+        viewModelScope.launch {
+            val current = repository.getSettingsDirect() ?: Settings()
+            repository.updateSettings(
+                current.copy(
+                    colorPalette = if (primary != null || secondary != null || background != null) "Custom" else "Default",
+                    customColor = primary,
+                    customIconColor = secondary,
+                    customBgColor = background
                 )
             )
         }
@@ -978,28 +1569,115 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
             var success = false
             var logoBitmap: android.graphics.Bitmap? = null
             try {
-                val txList = allTransactions.value.sortedBy { it.transactionDate }
+                val range = sessionManager.getPdfDateRange()
+                val customStart = sessionManager.getPdfCustomStartDate()
+                val customEnd = sessionManager.getPdfCustomEndDate()
+                val dateFormat = sessionManager.getPdfDateFormat()
+                val timeFormat = sessionManager.getPdfTimeFormat()
+                
+                val showNotes = sessionManager.getPdfIncludeNotes()
+                val showCategories = sessionManager.getPdfIncludeCategories()
+                val showAccount = sessionManager.getPdfIncludeAccount()
+                val showRunningBalance = sessionManager.getPdfIncludeRunningBalance()
+                val showSummary = sessionManager.getPdfIncludeSummary()
+                val showTxIds = sessionManager.getPdfIncludeTransactionIds()
+
+                val sdfParser = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val calendar = Calendar.getInstance()
+                val today = Date()
+                
+                // Helper to get start and end milliseconds
+                fun getStartEndMs(): Pair<Long, Long> {
+                    calendar.time = today
+                    calendar.set(Calendar.HOUR_OF_DAY, 0)
+                    calendar.set(Calendar.MINUTE, 0)
+                    calendar.set(Calendar.SECOND, 0)
+                    calendar.set(Calendar.MILLISECOND, 0)
+                    val todayStart = calendar.timeInMillis
+                    val todayEnd = todayStart + 24 * 60 * 60 * 1000L - 1000L
+
+                    return when (range) {
+                        "Today" -> Pair(todayStart, todayEnd)
+                        "Yesterday" -> {
+                            val start = todayStart - 24 * 60 * 60 * 1000L
+                            Pair(start, start + 24 * 60 * 60 * 1000L - 1000L)
+                        }
+                        "This Week" -> {
+                            calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
+                            Pair(calendar.timeInMillis, todayEnd)
+                        }
+                        "This Month" -> {
+                            calendar.set(Calendar.DAY_OF_MONTH, 1)
+                            Pair(calendar.timeInMillis, todayEnd)
+                        }
+                        "Last Month" -> {
+                            calendar.add(Calendar.MONTH, -1)
+                            calendar.set(Calendar.DAY_OF_MONTH, 1)
+                            val start = calendar.timeInMillis
+                            val maxDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                            calendar.set(Calendar.DAY_OF_MONTH, maxDay)
+                            calendar.set(Calendar.HOUR_OF_DAY, 23)
+                            calendar.set(Calendar.MINUTE, 59)
+                            calendar.set(Calendar.SECOND, 59)
+                            Pair(start, calendar.timeInMillis)
+                        }
+                        "Custom" -> {
+                            val start = if (customStart > 0) {
+                                val c = Calendar.getInstance()
+                                c.timeInMillis = customStart
+                                c.set(Calendar.HOUR_OF_DAY, 0)
+                                c.set(Calendar.MINUTE, 0)
+                                c.set(Calendar.SECOND, 0)
+                                c.set(Calendar.MILLISECOND, 0)
+                                c.timeInMillis
+                            } else todayStart
+                            val end = if (customEnd > 0) {
+                                val c = Calendar.getInstance()
+                                c.timeInMillis = customEnd
+                                c.set(Calendar.HOUR_OF_DAY, 23)
+                                c.set(Calendar.MINUTE, 59)
+                                c.set(Calendar.SECOND, 59)
+                                c.set(Calendar.MILLISECOND, 999)
+                                c.timeInMillis
+                            } else todayEnd
+                            Pair(start, end)
+                        }
+                        else -> Pair(0L, Long.MAX_VALUE)
+                    }
+                }
+
+                val (filterStartMs, filterEndMs) = getStartEndMs()
+                val txList = allTransactions.value.filter { tx ->
+                    val txDatePart = tx.transactionDate.substringBefore("T")
+                    val txTimeMs = try { sdfParser.parse(txDatePart)?.time ?: 0L } catch(e: Exception) { 0L }
+                    txTimeMs in filterStartMs..filterEndMs
+                }.sortedBy { it.transactionDate }
+
+                // Precompute running balances
+                val runningBalances = mutableListOf<Double>()
+                var currentBal = 0.0
+                txList.forEach { tx ->
+                    if (tx.type.lowercase() == "income") {
+                        currentBal += tx.amount
+                    } else {
+                        currentBal -= tx.amount
+                    }
+                    runningBalances.add(currentBal)
+                }
+
                 val pdfDocument = android.graphics.pdf.PdfDocument()
-                
-                // Define page parameters
-                val pageWidth = 595 // A4 width in points (72 points/inch)
-                val pageHeight = 842 // A4 height in points
-                
-                // Define layout constraints
+                val pageWidth = 595
+                val pageHeight = 842
                 val margin = 40f
                 val rowHeight = 24f
                 val headerHeight = 35f
-                val yStart = 140f
-                val rowsPerPage = ((pageHeight - yStart - margin) / rowHeight).toInt()
-                
-                // Decode logo resource at a very small size to minimize PDF file size
+
                 val context = getApplication<Application>()
                 logoBitmap = try {
                     val options = android.graphics.BitmapFactory.Options().apply {
                         inJustDecodeBounds = true
                     }
                     android.graphics.BitmapFactory.decodeResource(context.resources, com.titanbag.app.R.drawable.logo, options)
-                    
                     val reqWidth = 64
                     val reqHeight = 64
                     var inSampleSize = 1
@@ -1010,7 +1688,6 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                             inSampleSize *= 2
                         }
                     }
-                    
                     val decodeOptions = android.graphics.BitmapFactory.Options().apply {
                         this.inSampleSize = inSampleSize
                         inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
@@ -1022,47 +1699,125 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                             rawBitmap.recycle()
                         }
                         scaled
-                    } else {
-                        null
-                    }
+                    } else null
                 } catch (e: Exception) {
                     null
                 }
+
+                fun formatPdfDate(dateStr: String): String {
+                    val parser = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val date = try { parser.parse(dateStr) } catch(e: Exception) { null } ?: return dateStr
+                    val pattern = when (dateFormat) {
+                        "DD/MM/YYYY" -> "dd/MM/yyyy"
+                        "MM/DD/YYYY" -> "MM/dd/yyyy"
+                        "YYYY-MM-DD" -> "yyyy-MM-dd"
+                        "DD MMM YYYY" -> "dd MMM yyyy"
+                        else -> "dd/MM/yyyy"
+                    }
+                    return SimpleDateFormat(pattern, Locale.getDefault()).format(date)
+                }
+
+                fun formatPdfTime(timeStr: String): String {
+                    val parser = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    val time = try { parser.parse(timeStr) } catch(e: Exception) { null } ?: return timeStr
+                    val pattern = when (timeFormat) {
+                        "12-hour" -> "hh:mm a"
+                        "24-hour" -> "HH:mm"
+                        else -> "hh:mm a"
+                    }
+                    return SimpleDateFormat(pattern, Locale.getDefault()).format(time)
+                }
+
+                fun android.graphics.Paint.ellipsize(text: String, width: Float): String {
+                    if (measureText(text) <= width) return text
+                    var result = text
+                    while (result.isNotEmpty() && measureText("$result...") > width) {
+                        result = result.dropLast(1)
+                    }
+                    return if (result.isEmpty()) "..." else "$result..."
+                }
+
+                // Define Columns
+                val columns = mutableListOf<Triple<String, Float, (TransactionWithDetails, Double) -> String>>()
+                if (showTxIds) {
+                    columns.add(Triple("ID", 0.7f, { tx, bal -> tx.id.toString() }))
+                }
+                columns.add(Triple("Date", 1.0f, { tx, bal ->
+                    val parts = tx.transactionDate.split("T")
+                    formatPdfDate(parts.getOrNull(0) ?: "")
+                }))
+                columns.add(Triple("Time", 0.9f, { tx, bal ->
+                    val parts = tx.transactionDate.split("T")
+                    formatPdfTime(parts.getOrNull(1)?.take(5) ?: "")
+                }))
+                if (showAccount) {
+                    columns.add(Triple("Account", 1.2f, { tx, bal -> tx.accountName }))
+                }
+                if (showCategories) {
+                    columns.add(Triple("Category", 1.2f, { tx, bal -> tx.categoryName }))
+                }
+                columns.add(Triple("Type", 0.8f, { tx, bal -> tx.type.uppercase() }))
+                columns.add(Triple("Amount", 1.1f, { tx, bal -> String.format("₹%.2f", tx.amount) }))
+                if (showRunningBalance) {
+                    columns.add(Triple("Balance", 1.2f, { tx, bal -> String.format("₹%.2f", bal) }))
+                }
+                if (showNotes) {
+                    columns.add(Triple("Notes", 1.8f, { tx, bal -> tx.note }))
+                }
+
+                val totalWeight = columns.sumOf { it.second.toDouble() }.toFloat()
+                val availableWidth = pageWidth - 2 * margin
+                val colWidths = columns.map { (it.second / totalWeight) * availableWidth }
+
+                // Distribute transactions to pages
+                val pages = mutableListOf<List<TransactionWithDetails>>()
+                var currentList = mutableListOf<TransactionWithDetails>()
+                txList.forEachIndexed { idx, tx ->
+                    val limit = if (pages.isEmpty()) {
+                        val page1YStart = if (showSummary) 190f else 130f
+                        ((pageHeight - page1YStart - margin - 30f) / rowHeight).toInt()
+                    } else {
+                        ((pageHeight - 60f - margin - 30f) / rowHeight).toInt()
+                    }
+                    currentList.add(tx)
+                    if (currentList.size >= limit || idx == txList.lastIndex) {
+                        pages.add(currentList)
+                        currentList = mutableListOf()
+                    }
+                }
                 
-                // Split transactions into pages
-                val chunks = if (txList.isEmpty()) listOf(emptyList()) else txList.chunked(rowsPerPage)
-                
-                chunks.forEachIndexed { pageIndex, pageTxList ->
+                val finalPagesList = if (pages.isEmpty()) listOf(emptyList()) else pages
+
+                finalPagesList.forEachIndexed { pageIndex, pageTxList ->
                     val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageIndex + 1).create()
                     val page = pdfDocument.startPage(pageInfo)
                     val canvas = page.canvas
                     
-                    // Set up paints
                     val paint = android.graphics.Paint().apply {
                         isAntiAlias = true
                         isFilterBitmap = true
                     }
                     val textPaint = android.graphics.Paint().apply {
                         color = android.graphics.Color.BLACK
-                        textSize = 10f
+                        textSize = 9f
                         isAntiAlias = true
                         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
                     }
                     val boldTextPaint = android.graphics.Paint().apply {
                         color = android.graphics.Color.BLACK
-                        textSize = 10f
+                        textSize = 9f
                         isAntiAlias = true
                         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
                     }
                     val titlePaint = android.graphics.Paint().apply {
                         color = android.graphics.Color.parseColor("#121212")
-                        textSize = 24f
+                        textSize = 22f
                         isAntiAlias = true
                         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
                     }
                     val subtitlePaint = android.graphics.Paint().apply {
                         color = android.graphics.Color.GRAY
-                        textSize = 10f
+                        textSize = 9f
                         isAntiAlias = true
                         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
                     }
@@ -1079,103 +1834,136 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                                 e.printStackTrace()
                             }
                         }
-                        canvas.drawText("TITANBAG", titleStartX, 54f, titlePaint)
-                        val currentDate = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                        canvas.drawText("Generated on: $currentDate", margin, 78f, subtitlePaint)
+                        canvas.drawText("PIGGYBAG", titleStartX, 54f, titlePaint)
+                        val currentDate = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        canvas.drawText("Statement Range: $range | Generated on: $currentDate", margin, 78f, subtitlePaint)
                         canvas.drawText("Total Transactions: ${txList.size}", margin, 92f, subtitlePaint)
                         
                         // Draw decorative bar
-                        paint.color = android.graphics.Color.parseColor("#006B5D") // Brand Teal
-                        canvas.drawRect(margin, 116f, pageWidth - margin, 120f, paint)
+                        paint.color = android.graphics.Color.parseColor("#006B5D")
+                        canvas.drawRect(margin, 102f, pageWidth - margin, 105f, paint)
+
+                        // Draw Summary Box
+                        if (showSummary && txList.isNotEmpty()) {
+                            val boxTop = 115f
+                            val boxHeight = 55f
+                            val boxWidth = pageWidth - 2 * margin
+                            
+                            paint.color = android.graphics.Color.parseColor("#F0F7F6")
+                            canvas.drawRoundRect(margin, boxTop, margin + boxWidth, boxTop + boxHeight, 8f, 8f, paint)
+                            
+                            paint.color = android.graphics.Color.parseColor("#B2DFDB")
+                            paint.style = android.graphics.Paint.Style.STROKE
+                            paint.strokeWidth = 1f
+                            canvas.drawRoundRect(margin, boxTop, margin + boxWidth, boxTop + boxHeight, 8f, 8f, paint)
+                            paint.style = android.graphics.Paint.Style.FILL
+                            
+                            val totalIncome = txList.filter { it.type.lowercase() == "income" }.sumOf { it.amount }
+                            val totalExpense = txList.filter { it.type.lowercase() == "expense" }.sumOf { it.amount }
+                            val netSavings = totalIncome - totalExpense
+                            
+                            val colW = boxWidth / 3
+                            val labelY = boxTop + 20f
+                            val valueY = boxTop + 42f
+                            
+                            val center1 = margin + colW / 2
+                            val center2 = margin + colW + colW / 2
+                            val center3 = margin + 2 * colW + colW / 2
+                            
+                            val summaryLabelPaint = android.graphics.Paint(subtitlePaint).apply {
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                textSize = 8f
+                                color = android.graphics.Color.parseColor("#555555")
+                            }
+                            val summaryValuePaint = android.graphics.Paint(boldTextPaint).apply {
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                textSize = 11f
+                            }
+                            
+                            canvas.drawText("TOTAL INCOME", center1, labelY, summaryLabelPaint)
+                            summaryValuePaint.color = android.graphics.Color.parseColor("#00796B")
+                            canvas.drawText(String.format("₹%.2f", totalIncome), center1, valueY, summaryValuePaint)
+                            
+                            canvas.drawText("TOTAL EXPENSE", center2, labelY, summaryLabelPaint)
+                            summaryValuePaint.color = android.graphics.Color.parseColor("#D32F2F")
+                            canvas.drawText(String.format("₹%.2f", totalExpense), center2, valueY, summaryValuePaint)
+                            
+                            canvas.drawText("NET SAVINGS", center3, labelY, summaryLabelPaint)
+                            summaryValuePaint.color = if (netSavings >= 0) android.graphics.Color.parseColor("#00796B") else android.graphics.Color.parseColor("#D32F2F")
+                            canvas.drawText(String.format("₹%.2f", netSavings), center3, valueY, summaryValuePaint)
+                        }
                     } else {
                         var titlePageStartX = margin
                         if (logoBitmap != null) {
                             try {
-                                val dstRect = android.graphics.RectF(margin, 30f, margin + 18f, 30f + 18f)
+                                val dstRect = android.graphics.RectF(margin, 25f, margin + 18f, 25f + 18f)
                                 canvas.drawBitmap(logoBitmap, null, dstRect, paint)
                                 titlePageStartX = margin + 24f
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         }
-                        canvas.drawText("TITANBAG - Transactions Statement (Page ${pageIndex + 1})", titlePageStartX, 44f, boldTextPaint)
-                        paint.color = android.graphics.Color.parseColor("#006B5D") // Brand Teal
-                        canvas.drawRect(margin, 52f, pageWidth - margin, 54f, paint)
+                        canvas.drawText("PIGGYBAG - Statement Range: $range (Page ${pageIndex + 1})", titlePageStartX, 38f, boldTextPaint)
+                        paint.color = android.graphics.Color.parseColor("#006B5D")
+                        canvas.drawRect(margin, 46f, pageWidth - margin, 48f, paint)
                     }
                     
                     // Draw Table Header
-                    val headerY = if (pageIndex == 0) yStart else 70f
-                    paint.color = android.graphics.Color.parseColor("#EEEEEE")
+                    val headerY = if (pageIndex == 0) {
+                        if (showSummary) 185f else 120f
+                    } else 55f
+                    
+                    paint.color = android.graphics.Color.parseColor("#F0F4F4")
                     canvas.drawRect(margin, headerY, pageWidth - margin, headerY + headerHeight, paint)
                     
-                    val colDateX = margin + 5f
-                    val colTimeX = margin + 75f
-                    val colAccountX = margin + 135f
-                    val colCategoryX = margin + 235f
-                    val colTypeX = margin + 345f
-                    val colAmountX = margin + 425f
-                    
                     val headerTextY = headerY + 22f
-                    canvas.drawText("Date", colDateX, headerTextY, boldTextPaint)
-                    canvas.drawText("Time", colTimeX, headerTextY, boldTextPaint)
-                    canvas.drawText("Account", colAccountX, headerTextY, boldTextPaint)
-                    canvas.drawText("Category", colCategoryX, headerTextY, boldTextPaint)
-                    canvas.drawText("Type", colTypeX, headerTextY, boldTextPaint)
-                    canvas.drawText("Amount (₹)", colAmountX, headerTextY, boldTextPaint)
+                    var currentHeaderX = margin
+                    columns.forEachIndexed { i, col ->
+                        canvas.drawText(col.first, currentHeaderX + 4f, headerTextY, boldTextPaint)
+                        currentHeaderX += colWidths[i]
+                    }
                     
                     // Draw rows
                     var currentY = headerY + headerHeight
-                    pageTxList.forEachIndexed { index, tx ->
-                        val isEven = index % 2 == 0
+                    pageTxList.forEachIndexed { rowIndex, tx ->
+                        val isEven = rowIndex % 2 == 0
                         if (isEven) {
-                            paint.color = android.graphics.Color.parseColor("#F9F9F9")
+                            paint.color = android.graphics.Color.parseColor("#FAFAFA")
                             canvas.drawRect(margin, currentY, pageWidth - margin, currentY + rowHeight, paint)
                         }
                         
                         val rowTextY = currentY + 16f
+                        var cellX = margin
                         
-                        // Date & Time Split
-                        val parts = tx.transactionDate.split("T")
-                        val datePart = parts.getOrNull(0) ?: ""
-                        val timePart = parts.getOrNull(1)?.take(5) ?: ""
+                        val txIndex = txList.indexOf(tx)
+                        val runningBal = runningBalances.getOrElse(txIndex) { 0.0 }
                         
-                        // Date
-                        canvas.drawText(datePart, colDateX, rowTextY, textPaint)
-                        
-                        // Time
-                        canvas.drawText(timePart, colTimeX, rowTextY, textPaint)
-                        
-                        // Account
-                        val accText = if (tx.accountName.length > 12) tx.accountName.take(10) + ".." else tx.accountName
-                        canvas.drawText(accText, colAccountX, rowTextY, textPaint)
-                        
-                        // Category
-                        val catText = if (tx.categoryName.length > 15) tx.categoryName.take(13) + ".." else tx.categoryName
-                        canvas.drawText(catText, colCategoryX, rowTextY, textPaint)
-                        
-                        // Type
-                        val typeUpper = tx.type.uppercase()
-                        val typePaint = android.graphics.Paint(textPaint).apply {
-                            color = if (tx.type.lowercase() == "income") {
-                                android.graphics.Color.parseColor("#00796B") // Teal/Green
+                        columns.forEachIndexed { colIndex, col ->
+                            val cellText = col.third(tx, runningBal)
+                            val allowedWidth = colWidths[colIndex] - 8f
+                            val truncated = textPaint.ellipsize(cellText, allowedWidth)
+                            
+                            val drawPaint = if (col.first == "Type") {
+                                android.graphics.Paint(textPaint).apply {
+                                    color = if (tx.type.lowercase() == "income") {
+                                        android.graphics.Color.parseColor("#00796B")
+                                    } else {
+                                        android.graphics.Color.parseColor("#D32F2F")
+                                    }
+                                    typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+                                }
                             } else {
-                                android.graphics.Color.parseColor("#D32F2F") // Red
+                                textPaint
                             }
-                            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+                            canvas.drawText(truncated, cellX + 4f, rowTextY, drawPaint)
+                            cellX += colWidths[colIndex]
                         }
-                        canvas.drawText(typeUpper, colTypeX, rowTextY, typePaint)
-                        
-                        // Amount
-                        val formattedAmount = String.format("₹%.2f", tx.amount)
-                        canvas.drawText(formattedAmount, colAmountX, rowTextY, textPaint)
-                        
                         currentY += rowHeight
                     }
                     
-                    // Draw Page number at bottom right
+                    // Footer
                     val footerY = pageHeight - 20f
-                    canvas.drawText("Page ${pageIndex + 1} of ${chunks.size}", pageWidth - margin - 60f, footerY, subtitlePaint)
-                    
+                    canvas.drawText("Page ${pageIndex + 1} of ${finalPagesList.size}", pageWidth - margin - 60f, footerY, subtitlePaint)
                     pdfDocument.finishPage(page)
                 }
                 
@@ -1366,65 +2154,6 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         return result
     }
 
-    private fun saveCachedAccounts(accounts: List<Account>) {
-        val array = org.json.JSONArray()
-        accounts.forEach { array.put(it.toJson()) }
-        prefs.edit().putString("cached_accounts", array.toString()).apply()
-    }
-
-    private fun loadCachedAccounts(): List<Account> {
-        val jsonStr = prefs.getString("cached_accounts", null) ?: return emptyList()
-        val list = mutableListOf<Account>()
-        try {
-            val array = org.json.JSONArray(jsonStr)
-            for (i in 0 until array.length()) {
-                list.add(jsonToAccount(array.getJSONObject(i)))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return list
-    }
-
-    private fun saveCachedCategories(categories: List<Category>) {
-        val array = org.json.JSONArray()
-        categories.forEach { array.put(it.toJson()) }
-        prefs.edit().putString("cached_categories", array.toString()).apply()
-    }
-
-    private fun loadCachedCategories(): List<Category> {
-        val jsonStr = prefs.getString("cached_categories", null) ?: return emptyList()
-        val list = mutableListOf<Category>()
-        try {
-            val array = org.json.JSONArray(jsonStr)
-            for (i in 0 until array.length()) {
-                list.add(jsonToCategory(array.getJSONObject(i)))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return list
-    }
-
-    private fun saveCachedTransactions(transactions: List<TransactionWithDetails>) {
-        val array = org.json.JSONArray()
-        transactions.forEach { array.put(it.toJson()) }
-        prefs.edit().putString("cached_transactions", array.toString()).apply()
-    }
-
-    private fun loadCachedTransactions(): List<TransactionWithDetails> {
-        val jsonStr = prefs.getString("cached_transactions", null) ?: return emptyList()
-        val list = mutableListOf<TransactionWithDetails>()
-        try {
-            val array = org.json.JSONArray(jsonStr)
-            for (i in 0 until array.length()) {
-                list.add(jsonToTransactionWithDetails(array.getJSONObject(i)))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return list
-    }
     // --- MANAGEMENT HUB: USER PROFILES & SEEDING ---
     val allLocalUserProfiles = repository.getAllLocalUserProfilesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -1444,11 +2173,13 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         repository.getDebtRecordsFlow(userId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun switchLocalUser(userId: String) {
+    fun switchLocalUser(userId: String, showFeedback: Boolean = true) {
         viewModelScope.launch {
             currentUserId.value = userId
             prefs.edit().putString("active_local_user_id", userId).apply()
-            showSnackbar("Switched active profile")
+            if (showFeedback) {
+                showSnackbar("Switched active profile")
+            }
         }
     }
 
@@ -1472,7 +2203,12 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         var code: String
         do {
-            code = (1..8).map { chars.random() }.joinToString("")
+            val grp1 = (1..3).map { chars.random() }.joinToString("")
+            val grp2 = (1..4).map { chars.random() }.joinToString("")
+            val grp3 = (1..4).map { chars.random() }.joinToString("")
+            val grp4 = (1..4).map { chars.random() }.joinToString("")
+            val grp5 = (1..4).map { chars.random() }.joinToString("")
+            code = "$grp1-$grp2-$grp3-$grp4-$grp5"
         } while (repository.getLocalUserProfileByShareCode(code) != null)
         return code
     }
@@ -1502,7 +2238,7 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     // --- PARTNER SHARING ---
     fun connectPartnerLocal(partnerShareCode: String, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val codeClean = partnerShareCode.trim().uppercase()
+            val codeClean = partnerShareCode.replace("-", "").trim().uppercase()
             val currentUser = repository.getLocalUserProfileById(currentUserId.value)
             
             if (currentUser == null) {
@@ -1551,7 +2287,19 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- GROUP EXPENSE SPLIT ---
-    fun createGroupLocal(title: String, onResult: (Boolean, String?) -> Unit) {
+    fun createGroupLocal(
+        title: String,
+        description: String = "",
+        startDate: String = "",
+        endDate: String = "",
+        destination: String = "",
+        photos: String = "",
+        receipts: String = "",
+        budget: Double = 0.0,
+        currency: String = "₹",
+        notes: String = "",
+        onResult: (Boolean, String?) -> Unit
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             val groupId = UUID.randomUUID().toString()
             val groupPin = generateUniqueGroupPin()
@@ -1565,7 +2313,16 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 groupPin = groupPin,
                 createdBy = currentUserId.value,
                 createdDate = nowStr,
-                status = "active"
+                status = "Running",
+                description = description,
+                startDate = startDate,
+                endDate = endDate,
+                destination = destination,
+                photos = photos,
+                receipts = receipts,
+                budget = budget,
+                currency = currency,
+                notes = notes
             )
             repository.insertGroup(group)
 
@@ -1581,6 +2338,13 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
             repository.insertGroupMember(member)
 
             launch(Dispatchers.Main) { onResult(true, groupPin) }
+        }
+    }
+
+    fun updateGroupLocal(group: Group) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertGroup(group)
+            launch(Dispatchers.Main) { showSnackbar("Group details updated") }
         }
     }
 
@@ -1624,7 +2388,21 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addGroupExpenseLocal(groupId: String, amount: Double, description: String, dateStr: String) {
+    fun addGroupExpenseLocal(
+        groupId: String,
+        amount: Double,
+        description: String,
+        dateStr: String,
+        category: String = "",
+        subcategory: String = "",
+        receipt: String = "",
+        location: String = "",
+        paymentMethod: String = "",
+        tags: String = "",
+        participantsIncluded: String = "",
+        splitType: String = "Equal",
+        shares: String = ""
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             val expenseId = UUID.randomUUID().toString()
             val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
@@ -1636,10 +2414,59 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 amount = amount,
                 description = description,
                 expenseDate = date,
-                createdAt = nowStr
+                createdAt = nowStr,
+                category = category,
+                subcategory = subcategory,
+                receipt = receipt,
+                location = location,
+                paymentMethod = paymentMethod,
+                lastModified = nowStr,
+                tags = tags,
+                participantsIncluded = participantsIncluded,
+                splitType = splitType,
+                shares = shares
             )
             repository.insertGroupExpense(expense)
             launch(Dispatchers.Main) { showSnackbar("Group expense added") }
+
+            // Alert / notify other users
+            triggerLocalNotification(
+                message = "New expense '${description}' of ₹${amount.toInt()} shared. Group members notified!",
+                title = "Group Split Update"
+            )
+
+            // Simulate another member adding an expense after a brief delay
+            kotlinx.coroutines.delay(4000)
+            val members = repository.getMembersForGroupDirect(groupId).filter { it.userId != currentUserId.value }
+            if (members.isNotEmpty()) {
+                val other = members.random()
+                val mockExpenses = listOf(
+                    "Shared cab ride" to 120.0,
+                    "Evening snacks" to 250.0,
+                    "Common groceries" to 340.0,
+                    "Soft drinks split" to 180.0
+                )
+                val expenseMock = mockExpenses.random()
+                val mockExpenseId = UUID.randomUUID().toString()
+                
+                val mockExpense = GroupExpense(
+                    id = mockExpenseId,
+                    groupId = groupId,
+                    userId = other.userId,
+                    amount = expenseMock.second,
+                    description = expenseMock.first,
+                    expenseDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date()),
+                    createdAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date()),
+                    splitType = "Equal",
+                    participantsIncluded = ""
+                )
+                repository.insertGroupExpense(mockExpense)
+                
+                triggerLocalNotification(
+                    message = "${other.displayName} added a new expense: '${expenseMock.first}' of ₹${expenseMock.second.toInt()}.",
+                    title = "Group Expense Alert"
+                )
+            }
         }
     }
 
@@ -1684,36 +2511,81 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
         expenses: List<GroupExpense>
     ): List<SettlementPayment> {
         if (members.isEmpty()) return emptyList()
-        val totalSpent = expenses.sumOf { it.amount }
-        val sharePerPerson = totalSpent / members.size
 
-        // Calculate total spent by each member
-        val memberSpentMap = members.associate { it.userId to 0.0 }.toMutableMap()
+        val netBalances = members.associate { it.userId to 0.0 }.toMutableMap()
+
         expenses.forEach { exp ->
-            val current = memberSpentMap[exp.userId] ?: 0.0
-            memberSpentMap[exp.userId] = current + exp.amount
+            val currentCredit = netBalances[exp.userId] ?: 0.0
+            netBalances[exp.userId] = currentCredit + exp.amount
+
+            val participants = if (exp.participantsIncluded.isNotBlank()) {
+                exp.participantsIncluded.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            } else {
+                members.map { it.userId }
+            }
+
+            val shareValues = if (exp.shares.isNotBlank()) {
+                exp.shares.split(",").map { it.trim().toDoubleOrNull() ?: 0.0 }
+            } else {
+                emptyList()
+            }
+
+            if (participants.isNotEmpty()) {
+                when (exp.splitType) {
+                    "Equal", "Only Selected Members" -> {
+                        val shareAmt = exp.amount / participants.size
+                        participants.forEach { pId ->
+                            netBalances[pId] = (netBalances[pId] ?: 0.0) - shareAmt
+                        }
+                    }
+                    "Percentage" -> {
+                        participants.forEachIndexed { i, pId ->
+                            val percent = shareValues.getOrNull(i) ?: 0.0
+                            val shareAmt = exp.amount * (percent / 100.0)
+                            netBalances[pId] = (netBalances[pId] ?: 0.0) - shareAmt
+                        }
+                    }
+                    "Custom Amount" -> {
+                        participants.forEachIndexed { i, pId ->
+                            val shareAmt = shareValues.getOrNull(i) ?: 0.0
+                            netBalances[pId] = (netBalances[pId] ?: 0.0) - shareAmt
+                        }
+                    }
+                    "Shares" -> {
+                        val totalShares = shareValues.sum()
+                        participants.forEachIndexed { i, pId ->
+                            val shVal = shareValues.getOrNull(i) ?: 0.0
+                            val shareAmt = if (totalShares > 0) exp.amount * (shVal / totalShares) else 0.0
+                            netBalances[pId] = (netBalances[pId] ?: 0.0) - shareAmt
+                        }
+                    }
+                    else -> {
+                        val shareAmt = exp.amount / participants.size
+                        participants.forEach { pId ->
+                            netBalances[pId] = (netBalances[pId] ?: 0.0) - shareAmt
+                        }
+                    }
+                }
+            }
         }
 
-        // Calculate net balance for each member: spent - share
         val balances = members.map { member ->
-            val spent = memberSpentMap[member.userId] ?: 0.0
+            val net = netBalances[member.userId] ?: 0.0
             GroupMemberBalance(
                 memberId = member.userId,
                 displayName = member.displayName,
-                balance = spent - sharePerPerson
+                balance = net
             )
         }
 
-        // Separate debtors and creditors
         val debtors = balances.filter { it.balance < -0.01 }
-            .sortedBy { it.balance } // sorted from most negative to least negative
+            .sortedBy { it.balance }
             .toMutableList()
         val creditors = balances.filter { it.balance > 0.01 }
-            .sortedByDescending { it.balance } // sorted from most positive to least positive
+            .sortedByDescending { it.balance }
             .toMutableList()
 
         val settlements = mutableListOf<SettlementPayment>()
-
         var debtorIndex = 0
         var creditorIndex = 0
 
@@ -1737,15 +2609,82 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
             debtor.balance += amountToPay
             creditor.balance -= amountToPay
 
-            if (debtor.balance >= -0.01) {
-                debtorIndex++
-            }
-            if (creditor.balance <= 0.01) {
-                creditorIndex++
-            }
+            if (debtor.balance >= -0.01) debtorIndex++
+            if (creditor.balance <= 0.01) creditorIndex++
         }
 
         return settlements
+    }
+
+    fun getSettlementsForGroupFlow(groupId: String): Flow<List<GroupSettlement>> {
+        return repository.getSettlementsForGroupFlow(groupId)
+    }
+
+    suspend fun getSettlementsForGroupDirect(groupId: String): List<GroupSettlement> {
+        return repository.getSettlementsForGroupDirect(groupId)
+    }
+
+    fun updateGroupSettlementStatus(settlementId: String, newStatus: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val settlements = repository.getSettlementsForGroupDirect(repository.groupDao.getGroupsForUserFlow(currentUserId.value).firstOrNull()?.firstOrNull()?.id ?: "")
+            val settlement = settlements.find { it.id == settlementId }
+            if (settlement != null) {
+                repository.updateSettlement(settlement.copy(status = newStatus))
+                launch(Dispatchers.Main) { showSnackbar("Settlement status updated") }
+            }
+        }
+    }
+
+    fun finalizeGroup(groupId: String, members: List<GroupMember>, expenses: List<GroupExpense>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteSettlementsForGroup(groupId)
+                
+                val list = calculateGroupSettlements(members, expenses)
+                val settlements = list.map {
+                    GroupSettlement(
+                        id = java.util.UUID.randomUUID().toString(),
+                        groupId = groupId,
+                        fromUserId = it.fromId,
+                        fromUserName = it.fromName,
+                        toUserId = it.toId,
+                        toUserName = it.toName,
+                        amount = it.amount,
+                        status = "Pending"
+                    )
+                }
+                repository.insertSettlements(settlements)
+                
+                val group = repository.groupDao.getGroupById(groupId)
+                if (group != null) {
+                    repository.groupDao.insertGroup(group.copy(status = "Completed"))
+                }
+                launch(Dispatchers.Main) { showSnackbar("Group finalized and settlements generated!") }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun reopenGroup(groupId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val group = repository.groupDao.getGroupById(groupId)
+            if (group != null) {
+                repository.groupDao.insertGroup(group.copy(status = "Running"))
+                repository.deleteSettlementsForGroup(groupId)
+                launch(Dispatchers.Main) { showSnackbar("Group event reopened for modifications!") }
+            }
+        }
+    }
+
+    fun archiveGroup(groupId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val group = repository.groupDao.getGroupById(groupId)
+            if (group != null) {
+                repository.groupDao.insertGroup(group.copy(status = "Archived"))
+                launch(Dispatchers.Main) { showSnackbar("Group event archived successfully!") }
+            }
+        }
     }
 
     // --- DEBT LIST ---
@@ -1795,14 +2734,16 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
                 try {
                     val activeUserId = currentUserId.value
                     val records = repository.getDebtRecordsDirect(activeUserId)
-                    val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.getDefault()).format(Date())
+                    val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US).format(Date())
                     
                     records.forEach { record ->
                         if (record.remainderBoolean && record.status.lowercase() == "pending" && record.dateTimestamp != null) {
                             if (record.dateTimestamp <= nowStr) {
                                 val actionDesc = if (record.action.lowercase() == "debt") "you borrowed" else "you lent"
                                 triggerLocalNotification(
-                                    "Debt Alert: ${record.personName} (${actionDesc} ₹${record.amount.toInt()}). Date: ${record.borrowedDate}"
+                                    message = "Debt Alert: ${record.personName} (${actionDesc} ₹${record.amount.toInt()}). Date: ${record.borrowedDate}",
+                                    title = "Debt Reminder",
+                                    destination = "debt_list"
                                 )
                                 repository.updateDebtRecord(record.copy(remainderBoolean = false))
                             }
@@ -1817,94 +2758,3 @@ class TitanBagViewModel(application: Application) : AndroidViewModel(application
     }
 }
 
-private fun Account.toJson(): org.json.JSONObject {
-    return org.json.JSONObject().apply {
-        put("id", id)
-        put("name", name)
-        put("type", type)
-        put("openingBalance", openingBalance)
-        put("currentBalance", currentBalance)
-        put("icon", icon)
-        put("color", color)
-    }
-}
-
-private fun jsonToAccount(json: org.json.JSONObject): Account {
-    return Account(
-        id = json.getInt("id"),
-        name = json.getString("name"),
-        type = json.getString("type"),
-        openingBalance = json.getDouble("openingBalance"),
-        currentBalance = json.getDouble("currentBalance"),
-        icon = json.getString("icon"),
-        color = json.getString("color")
-    )
-}
-
-private fun Category.toJson(): org.json.JSONObject {
-    return org.json.JSONObject().apply {
-        put("id", id)
-        put("name", name)
-        put("type", type)
-        put("icon", icon)
-        put("color", color)
-        put("isDefault", isDefault)
-        put("orderIndex", orderIndex)
-    }
-}
-
-private fun jsonToCategory(json: org.json.JSONObject): Category {
-    return Category(
-        id = json.getInt("id"),
-        name = json.getString("name"),
-        type = json.getString("type"),
-        icon = json.getString("icon"),
-        color = json.getString("color"),
-        isDefault = json.optBoolean("isDefault", false),
-        orderIndex = json.optInt("orderIndex", 0)
-    )
-}
-
-private fun TransactionWithDetails.toJson(): org.json.JSONObject {
-    return org.json.JSONObject().apply {
-        put("id", id)
-        put("amount", amount)
-        put("type", type)
-        put("categoryId", categoryId)
-        put("accountId", accountId)
-        put("note", note)
-        put("transactionDate", transactionDate)
-        put("createdAt", createdAt)
-        put("updatedAt", updatedAt)
-        put("attachmentPath", attachmentPath ?: "")
-        put("tags", tags)
-        put("categoryName", categoryName)
-        put("categoryIcon", categoryIcon)
-        put("categoryColor", categoryColor)
-        put("accountName", accountName)
-        put("accountIcon", accountIcon)
-        put("accountColor", accountColor)
-    }
-}
-
-private fun jsonToTransactionWithDetails(json: org.json.JSONObject): TransactionWithDetails {
-    return TransactionWithDetails(
-        id = json.getInt("id"),
-        amount = json.getDouble("amount"),
-        type = json.getString("type"),
-        categoryId = json.getInt("categoryId"),
-        accountId = json.getInt("accountId"),
-        note = json.getString("note"),
-        transactionDate = json.getString("transactionDate"),
-        createdAt = json.getString("createdAt"),
-        updatedAt = json.getString("updatedAt"),
-        attachmentPath = json.optString("attachmentPath").let { if (it.isEmpty()) null else it },
-        tags = json.optString("tags", ""),
-        categoryName = json.getString("categoryName"),
-        categoryIcon = json.getString("categoryIcon"),
-        categoryColor = json.getString("categoryColor"),
-        accountName = json.getString("accountName"),
-        accountIcon = json.getString("accountIcon"),
-        accountColor = json.getString("accountColor")
-    )
-}

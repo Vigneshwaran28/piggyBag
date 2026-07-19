@@ -8,9 +8,16 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.Typography
 import com.titanbag.app.R
+import androidx.compose.ui.text.font.FontFamily
 
 // Cosmic Slate
 private val CosmicSlateLight = lightColorScheme(
@@ -389,6 +396,48 @@ private val PlumAmoledDark = darkColorScheme(
     outlineVariant = PlumAmoledOutlineVariantDark
 )
 
+val LocalVisualStyle = staticCompositionLocalOf { "classic" }
+
+private val DiaryLightColorScheme = lightColorScheme(
+    primary = Color(0xFF003366), // Fountain Pen Blue
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD1E3FF),
+    onPrimaryContainer = Color(0xFF001933),
+    secondary = Color(0xFF4A0E0E), // Oxblood Leather
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFDAD4),
+    onSecondaryContainer = Color(0xFF3B0000),
+    tertiary = Color(0xFF006B5D),
+    onTertiary = Color.White,
+    background = Color(0xFFF4ECD8), // Parchment
+    onBackground = Color(0xFF1D1B16),
+    surface = Color(0xFFF4ECD8),
+    onSurface = Color(0xFF1D1B16),
+    surfaceVariant = Color(0xFFE7E2D3),
+    onSurfaceVariant = Color(0xFF49473A),
+    outline = Color(0xFF7A7768),
+    error = Color(0xFF990000), // Dried Blood Red
+    onError = Color.White
+)
+
+private val DiaryDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFD3B6A3),
+    onPrimary = Color(0xFF3E2C1E),
+    primaryContainer = Color(0xFF5A4333),
+    onPrimaryContainer = Color(0xFFF5E6E1),
+    secondary = Color(0xFFB5A599),
+    onSecondary = Color(0xFF2E241E),
+    background = Color(0xFF2A2621), // Leather Cover Dark
+    onBackground = Color(0xFFECE6DC),
+    surface = Color(0xFF35302A),
+    onSurface = Color(0xFFECE6DC),
+    surfaceVariant = Color(0xFF423C36),
+    onSurfaceVariant = Color(0xFFC7B59F),
+    outline = Color(0xFF8C8176),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
+)
+
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -397,16 +446,26 @@ fun MyApplicationTheme(
     customIconColorHex: String? = null,
     customBgColorHex: String? = null,
     themeModeSetting: String = "system",
+    fontStyle: String = "roboto",
+    visualStyle: String = "classic",
     content: @Composable () -> Unit
 ) {
     val matchingTheme = AppTheme.values().find { it.getFriendlyName() == colorPalette }
     
     val context = androidx.compose.ui.platform.LocalContext.current
-    var colorScheme = if (colorPalette == "Custom") {
+    var colorScheme = if (visualStyle == "diary") {
+        if (darkTheme) DiaryDarkColorScheme else DiaryLightColorScheme
+    } else if (colorPalette == "Custom") {
         val primaryColor = try { 
-            Color(android.graphics.Color.parseColor(customIconColorHex ?: customColorHex ?: "#6750A4")) 
+            Color(android.graphics.Color.parseColor(customColorHex ?: "#005FAF")) 
         } catch (e: Exception) { 
-            Color(0xFF6750A4) 
+            Color(0xFF005FAF) 
+        }
+        
+        val secondaryColor = try { 
+            Color(android.graphics.Color.parseColor(customIconColorHex ?: "#60A5FA")) 
+        } catch (e: Exception) { 
+            Color(0xFF60A5FA) 
         }
         
         val bgColor = try {
@@ -415,7 +474,7 @@ fun MyApplicationTheme(
             if (darkTheme) Color(0xFF121212) else Color(0xFFFFFFFF)
         }
         
-        generateCustomColorScheme(primaryColor, bgColor, darkTheme)
+        generateCustomColorScheme(primaryColor, secondaryColor, bgColor, darkTheme)
     } else if (matchingTheme?.isDynamic == true && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
         if (darkTheme) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
     } else if (matchingTheme != null) {
@@ -424,7 +483,7 @@ fun MyApplicationTheme(
         if (darkTheme) CosmicSlateDark else CosmicSlateLight
     }
 
-    if (darkTheme) {
+    if (darkTheme && visualStyle != "notebook") {
         val backgroundOverride = when (themeModeSetting) {
             "soft_dark" -> Color(0xFF1E1E1E)
             "pure_black" -> Color(0xFF000000)
@@ -444,15 +503,37 @@ fun MyApplicationTheme(
     val currentDensity = LocalDensity.current
     val fontScaleFreeDensity = Density(currentDensity.density, 1f)
 
+    val selectedFontFamily = if (visualStyle == "diary") {
+        ShadowsIntoLightFontFamily
+    } else {
+        when (fontStyle) {
+            "ibm_plex_sans", "roboto", "google_sans" -> IBMPlexSansFontFamily
+            "yusei_magic" -> YuseiMagicFontFamily
+            "smooch_sans" -> SmoochSansFontFamily
+            "shadows_into_light" -> ShadowsIntoLightFontFamily
+            "cormorant" -> CormorantFontFamily
+            "amatic_sc" -> AmaticSCFontFamily
+            "serif" -> FontFamily.Serif
+            "monospace" -> FontFamily.Monospace
+            else -> IBMPlexSansFontFamily
+        }
+    }
+    val customTypography = if (visualStyle == "diary") {
+        getDiaryTypography()
+    } else {
+        getTypographyForFont(selectedFontFamily)
+    }
+
     CompositionLocalProvider(
         LocalDensity provides fontScaleFreeDensity
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = customTypography,
             content = {
                 CompositionLocalProvider(
-                    LocalSpacing provides Spacing()
+                    LocalSpacing provides Spacing(),
+                    LocalVisualStyle provides visualStyle
                 ) {
                     content()
                 }
@@ -461,15 +542,37 @@ fun MyApplicationTheme(
     }
 }
 
-fun generateCustomColorScheme(primary: Color, background: Color, isDark: Boolean): ColorScheme {
+fun getDiaryTypography(): Typography {
+    return Typography(
+        displayLarge = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Normal, fontSize = 57.sp),
+        displayMedium = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Normal, fontSize = 45.sp),
+        displaySmall = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Normal, fontSize = 36.sp),
+        headlineLarge = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Bold, fontSize = 32.sp),
+        headlineMedium = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Bold, fontSize = 28.sp),
+        headlineSmall = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Bold, fontSize = 24.sp),
+        titleLarge = TextStyle(fontFamily = ShadowsIntoLightFontFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp),
+        titleMedium = TextStyle(fontFamily = CormorantFontFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp),
+        titleSmall = TextStyle(fontFamily = CormorantFontFamily, fontWeight = FontWeight.Bold, fontSize = 18.sp),
+        bodyLarge = TextStyle(fontFamily = CormorantFontFamily, fontWeight = FontWeight.Normal, fontSize = 18.sp),
+        bodyMedium = TextStyle(fontFamily = CormorantFontFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp),
+        bodySmall = TextStyle(fontFamily = CormorantFontFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp),
+        labelLarge = TextStyle(fontFamily = AmaticSCFontFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp),
+        labelMedium = TextStyle(fontFamily = AmaticSCFontFamily, fontWeight = FontWeight.Bold, fontSize = 14.sp),
+        labelSmall = TextStyle(fontFamily = AmaticSCFontFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    )
+}
+
+fun generateCustomColorScheme(primary: Color, secondary: Color, background: Color, isDark: Boolean): ColorScheme {
     return if (isDark) {
         darkColorScheme(
             primary = primary,
             onPrimary = if (primary.red + primary.green + primary.blue > 1.5f) Color.Black else Color.White,
             primaryContainer = primary.copy(alpha = 0.3f),
             onPrimaryContainer = Color.White,
-            secondary = primary.copy(alpha = 0.8f),
-            onSecondary = Color.White,
+            secondary = secondary,
+            onSecondary = if (secondary.red + secondary.green + secondary.blue > 1.5f) Color.Black else Color.White,
+            secondaryContainer = secondary.copy(alpha = 0.3f),
+            onSecondaryContainer = Color.White,
             background = background,
             surface = background,
             onBackground = Color.White,
@@ -483,8 +586,10 @@ fun generateCustomColorScheme(primary: Color, background: Color, isDark: Boolean
             onPrimary = if (primary.red + primary.green + primary.blue > 1.5f) Color.Black else Color.White,
             primaryContainer = primary.copy(alpha = 0.2f),
             onPrimaryContainer = Color.Black,
-            secondary = primary.copy(alpha = 0.8f),
-            onSecondary = Color.Black,
+            secondary = secondary,
+            onSecondary = if (secondary.red + secondary.green + secondary.blue > 1.5f) Color.Black else Color.White,
+            secondaryContainer = secondary.copy(alpha = 0.2f),
+            onSecondaryContainer = Color.Black,
             background = background,
             surface = background,
             onBackground = Color.Black,

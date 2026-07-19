@@ -26,7 +26,7 @@ class SyncWorker(
 
         val result = repository.sync()
         return if (result.isSuccess) {
-            showNotification("Cloud Sync Completed", "Cloud expense journals synchronized successfully!")
+            // No need to show success notifications
             Result.success()
         } else {
             showNotification("Cloud Sync Failed", "Could not synchronize journals: ${result.exceptionOrNull()?.message}")

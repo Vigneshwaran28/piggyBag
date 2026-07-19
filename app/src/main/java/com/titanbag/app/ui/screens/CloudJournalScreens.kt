@@ -962,7 +962,7 @@ fun PartnerProfileScreen(
 
                         OutlinedTextField(
                             value = partnerCodeToEnter,
-                            onValueChange = { partnerCodeToEnter = it.uppercase() },
+                            onValueChange = { partnerCodeToEnter = formatPartnerCode(it) },
                             label = { Text("Partner Share Code (EXP-XXXX-XXXX-XXXX)") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -1191,3 +1191,16 @@ fun SyncStatusScreen(
         }
     }
 }
+
+private fun formatPartnerCode(input: String): String {
+    val clean = input.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
+    val sb = StringBuilder()
+    for (i in clean.indices) {
+        if (i > 0 && i % 3 == 0) {
+            sb.append("-")
+        }
+        sb.append(clean[i])
+    }
+    return sb.toString()
+}
+

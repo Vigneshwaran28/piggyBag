@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.titanbag.app.data.TransactionWithDetails
+import com.titanbag.app.ui.theme.LocalVisualStyle
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -54,7 +55,8 @@ data class SectorCategoryLegend(
 fun RechartsSectorSpendingChart(
     transactions: List<TransactionWithDetails>,
     currency: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    type: String = "expense"
 ) {
     // 1. Prepare Last 6 Months range
     val last6Months = remember(transactions) {
@@ -71,8 +73,8 @@ fun RechartsSectorSpendingChart(
     }
 
     // 2. Extract unique categories that are expenses in these transactions
-    val categoryMap = remember(transactions) {
-        transactions.filter { it.type == "expense" }
+    val categoryMap = remember(transactions, type) {
+        transactions.filter { it.type == type }
             .associateBy({ it.categoryId }, { Pair(it.categoryName, it.categoryColor) })
     }
 
@@ -82,12 +84,12 @@ fun RechartsSectorSpendingChart(
     }
 
     // 3. Group expense transactions by month and category
-    val chartData = remember(transactions, last6Months, visibleCategoryIds) {
+    val chartData = remember(transactions, last6Months, visibleCategoryIds, type) {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         
         last6Months.map { (m, y) ->
             val monthTransactions = transactions.filter { tx ->
-                if (tx.type != "expense") return@filter false
+                if (tx.type != type) return@filter false
                 try {
                     val dateStr = tx.transactionDate.split("T").first()
                     val date = sdf.parse(dateStr)
@@ -133,12 +135,14 @@ fun RechartsSectorSpendingChart(
 
     // Interactive tooltip state
     var selectedMonthIndex by remember { mutableStateOf<Int?>(null) }
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = if (isDiary) Color(0xFFFFFDE7) else MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -153,7 +157,7 @@ fun RechartsSectorSpendingChart(
                 Column {
                     Text(
                         text = "Sector Analysis Dashboard",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -192,17 +196,17 @@ fun RechartsSectorSpendingChart(
                     val colWidth = canvasWidth / colCount
                     val barWidth = colWidth * 0.45f
 
-                    // 1. Draw dashed horizontal grid lines (Recharts style)
+                    // 1. Draw horizontal grid lines
                     val gridLineCount = 4
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                    val pathEffect = if (isDiary) null else PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                     
                     for (i in 0..gridLineCount) {
                         val y = (canvasHeight / gridLineCount) * i
                         drawLine(
-                            color = Color.LightGray.copy(alpha = 0.35f),
+                            color = if (isDiary) Color(0xFFD4E3FC) else Color.LightGray.copy(alpha = 0.35f),
                             start = Offset(0f, y),
                             end = Offset(canvasWidth, y),
-                            strokeWidth = 2f,
+                            strokeWidth = if (isDiary) 1f else 2f,
                             pathEffect = pathEffect
                         )
                     }
@@ -222,20 +226,35 @@ fun RechartsSectorSpendingChart(
                             val segmentHeight = (amount / maxMonthlyExpense) * canvasHeight * animScale
                             val rectTop = currentYBottom - segmentHeight
                             
-                            // Draw each stacked segment as a smooth rounded rectangle
-                            drawRoundRect(
-                                color = color,
-                                topLeft = Offset(colCenterX - (barWidth / 2), rectTop),
-                                size = Size(barWidth, segmentHeight),
-                                cornerRadius = CornerRadius(4f, 4f)
-                            )
+                            if (isDiary) {
+                                // Sketchy bar effect: hollow or slightly shaded with a rough stroke
+                                drawRect(
+                                    color = color.copy(alpha = 0.7f),
+                                    topLeft = Offset(colCenterX - (barWidth / 2), rectTop),
+                                    size = Size(barWidth, segmentHeight)
+                                )
+                                drawRect(
+                                    color = color,
+                                    topLeft = Offset(colCenterX - (barWidth / 2), rectTop),
+                                    size = Size(barWidth, segmentHeight),
+                                    style = Stroke(width = 2f)
+                                )
+                            } else {
+                                // Smooth rounded rectangle
+                                drawRoundRect(
+                                    color = color,
+                                    topLeft = Offset(colCenterX - (barWidth / 2), rectTop),
+                                    size = Size(barWidth, segmentHeight),
+                                    cornerRadius = CornerRadius(4f, 4f)
+                                )
+                            }
                             currentYBottom = rectTop
                         }
 
-                        // Highlight selected column with a soft backdrop (Recharts hover bar)
+                        // Highlight selected column
                         if (selectedMonthIndex == colIdx) {
                             drawRoundRect(
-                                color = Color.Gray.copy(alpha = 0.08f),
+                                color = if (isDiary) Color(0xFFFFF9A1).copy(alpha = 0.4f) else Color.Gray.copy(alpha = 0.08f),
                                 topLeft = Offset(colIdx * colWidth + 4f, 0f),
                                 size = Size(colWidth - 8f, canvasHeight),
                                 cornerRadius = CornerRadius(8f, 8f)
@@ -306,7 +325,7 @@ fun RechartsSectorSpendingChart(
 
                         if (data.categoryBreakdown.isEmpty()) {
                             Text(
-                                text = "No sector expenses recorded in this period",
+                                text = if (type == "expense") "No sector expenses recorded in this period" else "No sector income recorded in this period",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(vertical = 4.dp)
@@ -449,17 +468,18 @@ fun RechartsSectorSpendingChart(
 fun RechartsPieChart(
     transactions: List<TransactionWithDetails>,
     currency: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    type: String = "expense"
 ) {
     // 1. Filter expenses for the current month
-    val currentMonthTransactions = remember(transactions) {
+    val currentMonthTransactions = remember(transactions, type) {
         val cal = Calendar.getInstance()
         val currentMonth = cal.get(Calendar.MONTH)
         val currentYear = cal.get(Calendar.YEAR)
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
         transactions.filter { tx ->
-            if (tx.type != "expense") return@filter false
+            if (tx.type != type) return@filter false
             try {
                 val dateStr = tx.transactionDate.split("T").first()
                 val date = sdf.parse(dateStr)
@@ -494,11 +514,14 @@ fun RechartsPieChart(
         label = "pieScale"
     )
 
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = if (isDiary) Color(0xFFF1F8E9) else MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -513,7 +536,7 @@ fun RechartsPieChart(
                 Column {
                     Text(
                         text = "Current Month Distribution",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -532,7 +555,7 @@ fun RechartsPieChart(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No expenses this month.",
+                        text = if (type == "expense") "No expenses this month." else "No income this month.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -552,7 +575,7 @@ fun RechartsPieChart(
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val radius = size.minDimension / 2f
                             val center = Offset(size.width / 2f, size.height / 2f)
-                            val strokeWidth = radius * 0.4f
+                            val strokeWidth = if (isDiary) 6f else radius * 0.4f
 
                             var startAngle = -90f
                             categoryTotals.forEach { (catName, amount) ->
@@ -560,32 +583,56 @@ fun RechartsPieChart(
                                 val colorStr = categoryColors[catName] ?: "#808080"
                                 val color = try { Color(android.graphics.Color.parseColor(colorStr)) } catch (e: Exception) { Color.Gray }
 
-                                drawArc(
-                                    color = color,
-                                    startAngle = startAngle,
-                                    sweepAngle = sweepAngle,
-                                    useCenter = false,
-                                    style = Stroke(width = strokeWidth),
-                                    topLeft = Offset(center.x - radius + strokeWidth / 2f, center.y - radius + strokeWidth / 2f),
-                                    size = Size(radius * 2 - strokeWidth, radius * 2 - strokeWidth)
-                                )
+                                if (isDiary) {
+                                    // Hand-drawn arc style
+                                    drawArc(
+                                        color = color,
+                                        startAngle = startAngle,
+                                        sweepAngle = sweepAngle,
+                                        useCenter = true,
+                                        style = Stroke(width = 3f),
+                                        size = Size(size.width - 20f, size.height - 20f),
+                                        topLeft = Offset(10f, 10f)
+                                    )
+                                    // Slight inner shade
+                                    drawArc(
+                                        color = color.copy(alpha = 0.2f),
+                                        startAngle = startAngle,
+                                        sweepAngle = sweepAngle,
+                                        useCenter = true,
+                                        size = Size(size.width - 20f, size.height - 20f),
+                                        topLeft = Offset(10f, 10f)
+                                    )
+                                } else {
+                                    drawArc(
+                                        color = color,
+                                        startAngle = startAngle,
+                                        sweepAngle = sweepAngle,
+                                        useCenter = false,
+                                        style = Stroke(width = strokeWidth),
+                                        topLeft = Offset(center.x - radius + strokeWidth / 2f, center.y - radius + strokeWidth / 2f),
+                                        size = Size(radius * 2 - strokeWidth, radius * 2 - strokeWidth)
+                                    )
+                                }
                                 startAngle += sweepAngle
                             }
                         }
                         
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Total",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            Text(
-                                text = "$currency${String.format("%,.0f", totalExpense)}",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                        if (!isDiary) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Total",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Text(
+                                    text = "$currency${String.format("%,.0f", totalExpense)}",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
 

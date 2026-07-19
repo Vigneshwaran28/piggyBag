@@ -20,7 +20,23 @@ data class TransactionWithDetails(
     val categoryColor: String,
     val accountName: String,
     val accountIcon: String,
-    val accountColor: String
+    val accountColor: String,
+    val lifeAreaId: Int? = null,
+    val subcategoryId: Int? = null,
+    val purposeId: Int? = null,
+    val paidBy: String? = null,
+    val spentFor: String? = null,
+    val peopleTagged: String? = null,
+    val vehicleId: Int? = null,
+    val odometer: Double? = null,
+    val fuelQuantity: Double? = null,
+    val studentName: String? = null,
+    val lifeAreaName: String? = null,
+    val lifeAreaIcon: String? = null,
+    val lifeAreaColor: String? = null,
+    val subcategoryName: String? = null,
+    val purposeName: String? = null,
+    val vehicleNickname: String? = null
 )
 
 @Dao
@@ -87,20 +103,32 @@ interface CategoryDao {
 interface TransactionDao {
     @Query("""
         SELECT t.*, c.name as categoryName, c.icon as categoryIcon, c.color as categoryColor, 
-               a.name as accountName, a.icon as accountIcon, a.color as accountColor 
+               a.name as accountName, a.icon as accountIcon, a.color as accountColor,
+               la.name as lifeAreaName, la.icon as lifeAreaIcon, la.color as lifeAreaColor,
+               sub.name as subcategoryName, p.name as purposeName, v.nickname as vehicleNickname
         FROM transactions t 
         INNER JOIN categories c ON t.categoryId = c.id 
-        INNER JOIN accounts a ON t.accountId = a.id 
+        INNER JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN life_areas la ON t.lifeAreaId = la.id
+        LEFT JOIN subcategories sub ON t.subcategoryId = sub.id
+        LEFT JOIN purposes p ON t.purposeId = p.id
+        LEFT JOIN vehicles v ON t.vehicleId = v.id
         ORDER BY t.transactionDate DESC
     """)
     fun getAllTransactions(): Flow<List<TransactionWithDetails>>
 
     @Query("""
         SELECT t.*, c.name as categoryName, c.icon as categoryIcon, c.color as categoryColor, 
-               a.name as accountName, a.icon as accountIcon, a.color as accountColor 
+               a.name as accountName, a.icon as accountIcon, a.color as accountColor,
+               la.name as lifeAreaName, la.icon as lifeAreaIcon, la.color as lifeAreaColor,
+               sub.name as subcategoryName, p.name as purposeName, v.nickname as vehicleNickname
         FROM transactions t 
         INNER JOIN categories c ON t.categoryId = c.id 
         INNER JOIN accounts a ON t.accountId = a.id 
+        LEFT JOIN life_areas la ON t.lifeAreaId = la.id
+        LEFT JOIN subcategories sub ON t.subcategoryId = sub.id
+        LEFT JOIN purposes p ON t.purposeId = p.id
+        LEFT JOIN vehicles v ON t.vehicleId = v.id
         WHERE t.userId = :userId
         ORDER BY t.transactionDate DESC
     """)
@@ -108,10 +136,16 @@ interface TransactionDao {
 
     @Query("""
         SELECT t.*, c.name as categoryName, c.icon as categoryIcon, c.color as categoryColor, 
-               a.name as accountName, a.icon as accountIcon, a.color as accountColor 
+               a.name as accountName, a.icon as accountIcon, a.color as accountColor,
+               la.name as lifeAreaName, la.icon as lifeAreaIcon, la.color as lifeAreaColor,
+               sub.name as subcategoryName, p.name as purposeName, v.nickname as vehicleNickname
         FROM transactions t 
         INNER JOIN categories c ON t.categoryId = c.id 
         INNER JOIN accounts a ON t.accountId = a.id 
+        LEFT JOIN life_areas la ON t.lifeAreaId = la.id
+        LEFT JOIN subcategories sub ON t.subcategoryId = sub.id
+        LEFT JOIN purposes p ON t.purposeId = p.id
+        LEFT JOIN vehicles v ON t.vehicleId = v.id
         WHERE t.accountId = :accountId
         ORDER BY t.transactionDate DESC
     """)
@@ -119,10 +153,16 @@ interface TransactionDao {
 
     @Query("""
         SELECT t.*, c.name as categoryName, c.icon as categoryIcon, c.color as categoryColor, 
-               a.name as accountName, a.icon as accountIcon, a.color as accountColor 
+               a.name as accountName, a.icon as accountIcon, a.color as accountColor,
+               la.name as lifeAreaName, la.icon as lifeAreaIcon, la.color as lifeAreaColor,
+               sub.name as subcategoryName, p.name as purposeName, v.nickname as vehicleNickname
         FROM transactions t 
         INNER JOIN categories c ON t.categoryId = c.id 
         INNER JOIN accounts a ON t.accountId = a.id 
+        LEFT JOIN life_areas la ON t.lifeAreaId = la.id
+        LEFT JOIN subcategories sub ON t.subcategoryId = sub.id
+        LEFT JOIN purposes p ON t.purposeId = p.id
+        LEFT JOIN vehicles v ON t.vehicleId = v.id
         WHERE t.id = :id
     """)
     suspend fun getTransactionById(id: Int): TransactionWithDetails?
@@ -249,4 +289,160 @@ interface SettingsDao {
 
     @Update
     suspend fun updateSettings(settings: Settings)
+}
+
+@Dao
+interface LifeAreaDao {
+    @Query("SELECT * FROM life_areas ORDER BY name ASC")
+    fun getAllLifeAreas(): Flow<List<LifeArea>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLifeArea(lifeArea: LifeArea): Long
+
+    @Update
+    suspend fun updateLifeArea(lifeArea: LifeArea)
+
+    @Delete
+    suspend fun deleteLifeArea(lifeArea: LifeArea)
+}
+
+@Dao
+interface SubcategoryDao {
+    @Query("SELECT * FROM subcategories ORDER BY name ASC")
+    fun getAllSubcategories(): Flow<List<Subcategory>>
+
+    @Query("SELECT * FROM subcategories WHERE categoryId = :catId ORDER BY name ASC")
+    fun getSubcategoriesForCategory(catId: Int): Flow<List<Subcategory>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSubcategory(sub: Subcategory): Long
+
+    @Update
+    suspend fun updateSubcategory(sub: Subcategory)
+
+    @Delete
+    suspend fun deleteSubcategory(sub: Subcategory)
+}
+
+@Dao
+interface PurposeDao {
+    @Query("SELECT * FROM purposes ORDER BY name ASC")
+    fun getAllPurposes(): Flow<List<Purpose>>
+
+    @Query("SELECT * FROM purposes WHERE subcategoryId = :subId ORDER BY name ASC")
+    fun getPurposesForSubcategory(subId: Int): Flow<List<Purpose>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPurpose(purpose: Purpose): Long
+
+    @Update
+    suspend fun updatePurpose(purpose: Purpose)
+
+    @Delete
+    suspend fun deletePurpose(purpose: Purpose)
+}
+
+@Dao
+interface VehicleDao {
+    @Query("SELECT * FROM vehicles ORDER BY nickname ASC")
+    fun getAllVehicles(): Flow<List<Vehicle>>
+
+    @Query("SELECT * FROM vehicles WHERE id = :id")
+    suspend fun getVehicleById(id: Int): Vehicle?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVehicle(vehicle: Vehicle): Long
+
+    @Update
+    suspend fun updateVehicle(vehicle: Vehicle)
+
+    @Delete
+    suspend fun deleteVehicle(vehicle: Vehicle)
+}
+
+@Dao
+interface InvestmentDao {
+    @Query("SELECT * FROM investments ORDER BY purchaseDate DESC")
+    fun getAllInvestments(): Flow<List<Investment>>
+
+    @Query("SELECT * FROM investments WHERE id = :id")
+    suspend fun getInvestmentById(id: Int): Investment?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInvestment(investment: Investment): Long
+
+    @Update
+    suspend fun updateInvestment(investment: Investment)
+
+    @Delete
+    suspend fun deleteInvestment(investment: Investment)
+}
+
+@Dao
+interface SubscriptionDao {
+    @Query("SELECT * FROM subscriptions ORDER BY nextRenewalDate ASC")
+    fun getAllSubscriptions(): Flow<List<Subscription>>
+
+    @Query("SELECT * FROM subscriptions WHERE id = :id")
+    suspend fun getSubscriptionById(id: Int): Subscription?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSubscription(subscription: Subscription): Long
+
+    @Update
+    suspend fun updateSubscription(subscription: Subscription)
+
+    @Delete
+    suspend fun deleteSubscription(subscription: Subscription)
+}
+
+@Dao
+interface ReminderDao {
+    @Query("SELECT * FROM reminders ORDER BY dueDate ASC")
+    fun getAllReminders(): Flow<List<Reminder>>
+
+    @Query("SELECT * FROM reminders WHERE enabled = 1 ORDER BY dueDate ASC")
+    fun getActiveRemindersDirect(): List<Reminder>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReminder(reminder: Reminder): Long
+
+    @Update
+    suspend fun updateReminder(reminder: Reminder)
+
+    @Delete
+    suspend fun deleteReminder(reminder: Reminder)
+}
+
+@Dao
+interface GoldSilverPriceDao {
+    @Query("SELECT * FROM gold_silver_prices WHERE date = :date LIMIT 1")
+    suspend fun getPriceForDate(date: String): GoldSilverPrice?
+
+    @Query("SELECT * FROM gold_silver_prices ORDER BY date DESC")
+    fun getAllCachedPrices(): Flow<List<GoldSilverPrice>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPrice(price: GoldSilverPrice)
+}
+
+@Dao
+interface AutoPayDao {
+    @Query("SELECT * FROM autopays ORDER BY nextExecutionDate ASC")
+    fun getAllAutoPays(): Flow<List<AutoPay>>
+
+    @Query("SELECT * FROM autopays WHERE status = 'Active' ORDER BY nextExecutionDate ASC")
+    suspend fun getActiveAutoPaysDirect(): List<AutoPay>
+
+    @Query("SELECT * FROM autopays WHERE id = :id LIMIT 1")
+    suspend fun getAutoPayById(id: Int): AutoPay?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAutoPay(autoPay: AutoPay): Long
+
+    @Update
+    suspend fun updateAutoPay(autoPay: AutoPay)
+
+    @Delete
+    suspend fun deleteAutoPay(autoPay: AutoPay)
 }

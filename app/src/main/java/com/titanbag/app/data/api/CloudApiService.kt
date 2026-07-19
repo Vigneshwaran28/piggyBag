@@ -14,6 +14,9 @@ interface CloudApiService {
     @POST("login/google")
     suspend fun loginWithGoogle(@Body request: GoogleLoginRequest): Response<AuthResponse>
 
+    @POST("api/auth/set-password")
+    suspend fun setPassword(@Body request: SetPasswordRequest): Response<GeneralResponse>
+
     @GET("profile")
     suspend fun getProfile(): Response<ProfileResponse>
 

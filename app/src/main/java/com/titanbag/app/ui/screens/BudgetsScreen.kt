@@ -39,6 +39,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import com.titanbag.app.data.*
 import com.titanbag.app.ui.components.AnimatedEntranceItem
 import com.titanbag.app.ui.components.IconMapper
+import com.titanbag.app.ui.theme.LocalVisualStyle
 import com.titanbag.app.ui.theme.spacing
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -100,6 +102,9 @@ fun BudgetsScreen(
     LaunchedEffect(Unit) {
         animationPlayed = true
     }
+
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -279,7 +284,7 @@ fun BudgetsScreen(
                                 Spacer(modifier = Modifier.height(24.dp))
                                 Text(
                                     text = "No Budgets Configured", 
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), 
+                                    style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), 
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -306,7 +311,7 @@ fun BudgetsScreen(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            bottom = 120.dp // To clear the FAB just in case
+                            bottom = 120.dp 
                         ),
                         verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium)
                     ) {
@@ -321,8 +326,8 @@ fun BudgetsScreen(
                         val totalPercentageUsed = if (totalBudgetAmount > 0) (totalSpentAmount / totalBudgetAmount).toFloat() else 0f
 
                         val isOverBudget = totalSpentAmount > totalBudgetAmount
-                        val statusColor = if (isOverBudget) Color(0xFFFF7575) else Color(0xFF81C784)
-                        val progressColor = if (isOverBudget) Color(0xFFFF7575) else Color(0xFF81C784)
+                        val statusColor = if (isOverBudget) Color(0xFFFF7575) else if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784)
+                        val progressColor = if (isOverBudget) Color(0xFFFF7575) else if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784)
                         val centralAmount = if (isOverBudget) (totalSpentAmount - totalBudgetAmount) else (totalBudgetAmount - totalSpentAmount)
 
                         val targetPercentage = if (totalBudgetAmount > 0) (totalSpentAmount / totalBudgetAmount).toFloat().coerceIn(0f, 1f) else 0f
@@ -336,18 +341,17 @@ fun BudgetsScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
+                                    containerColor = if (isDiary) Color(0xFFF1F8E9) else MaterialTheme.colorScheme.surface
                                 ),
                                 shape = RoundedCornerShape(24.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                border = BorderStroke(1.dp, if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
                                     Text(
                                         text = "Budget Overview",
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
+                                        style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
 
@@ -398,7 +402,7 @@ fun BudgetsScreen(
                                                     useCenter = false,
                                                     topLeft = Offset(rectLeft, rectTop),
                                                     size = Size(rectSize, rectSize),
-                                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                                    style = if (isDiary) Stroke(width = strokeWidth, cap = StrokeCap.Butt) else Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                                 )
                                             }
 
@@ -435,10 +439,7 @@ fun BudgetsScreen(
 
                                                 Text(
                                                     text = "$currencySymbol${String.format(java.util.Locale.getDefault(), "%,.1f", centralAmount)}",
-                                                    style = MaterialTheme.typography.headlineLarge.copy(
-                                                        fontWeight = FontWeight.Black,
-                                                        fontSize = 22.sp
-                                                    ),
+                                                    style = if (isDiary) MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black, fontSize = 22.sp),
                                                     color = MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
@@ -463,10 +464,7 @@ fun BudgetsScreen(
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = "$currencySymbol${String.format(java.util.Locale.getDefault(), "%,.0f", totalBudgetAmount)}",
-                                                style = MaterialTheme.typography.headlineSmall.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 17.sp
-                                                ),
+                                                style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
@@ -482,10 +480,7 @@ fun BudgetsScreen(
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = "$currencySymbol${String.format(java.util.Locale.getDefault(), "%,.0f", totalSpentAmount)}",
-                                                style = MaterialTheme.typography.headlineSmall.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 17.sp
-                                                ),
+                                                style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
@@ -502,7 +497,7 @@ fun BudgetsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 "Active Budgets",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -517,6 +512,7 @@ fun BudgetsScreen(
                                 viewModel = viewModel,
                                 idx = idx,
                                 isSelected = isSelected,
+                                isDiary = isDiary,
                                 onClick = {
                                     if (selectedBudgetIds.isNotEmpty()) {
                                         selectedBudgetIds = if (isSelected) {
@@ -565,23 +561,11 @@ fun isTransactionInBudget(transaction: com.titanbag.app.data.TransactionWithDeta
     
     val txDateStr = transaction.transactionDate // yyyy-MM-dd
     
-    if (budget.budgetType == "CUSTOM" && budget.startDate != null && budget.endDate != null) {
+    if (budget.startDate != null && budget.endDate != null) {
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
         try {
-            val txTime = sdf.parse(txDateStr)?.time ?: 0L
+            val txTime = sdf.parse(txDateStr.substringBefore("T"))?.time ?: 0L
             return txTime in budget.startDate..budget.endDate
-        } catch (e: Exception) { return false }
-    } else if (budget.budgetType == "WEEKLY") {
-        val calendar = java.util.Calendar.getInstance()
-        val currentWeek = calendar.get(java.util.Calendar.WEEK_OF_YEAR)
-        val currentYear = calendar.get(java.util.Calendar.YEAR)
-        
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-        try {
-            val txDate = sdf.parse(txDateStr)
-            val txCal = java.util.Calendar.getInstance()
-            if (txDate != null) txCal.time = txDate
-            return txCal.get(java.util.Calendar.WEEK_OF_YEAR) == currentWeek && txCal.get(java.util.Calendar.YEAR) == currentYear
         } catch (e: Exception) { return false }
     } else {
         return txDateStr.startsWith("${budget.year}-${String.format("%02d", budget.month)}")
@@ -598,6 +582,7 @@ fun BudgetListItem(
     viewModel: TitanBagViewModel,
     idx: Int,
     isSelected: Boolean = false,
+    isDiary: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -626,19 +611,20 @@ fun BudgetListItem(
     val statusColor = when {
         progress > 1f -> Color(0xFFFF7575) // Soft Red
         progress >= 0.8f -> Color(0xFFFFB74D) // Soft Orange
-        else -> Color(0xFF81C784) // Soft Green
+        else -> if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784) // Soft Green
     }
 
     AnimatedEntranceItem(index = idx + 2) {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else if (isDiary) Color(0xFFFFFDE7) else MaterialTheme.colorScheme.surface
             ),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            shape = if (isDiary) RoundedCornerShape(20.dp) else RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp),
             modifier = modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(if (isDiary) RoundedCornerShape(20.dp) else RoundedCornerShape(16.dp))
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = onLongClick
@@ -678,7 +664,7 @@ fun BudgetListItem(
                                 Text(
                                     text = if (!budget.budgetName.isNullOrBlank()) budget.budgetName!! else labelName, 
                                     fontWeight = FontWeight.Bold, 
-                                    style = MaterialTheme.typography.titleMedium, 
+                                    style = if (isDiary) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -717,7 +703,10 @@ fun BudgetListItem(
                                     text = "Limit: $currencySymbol${budget.budgetAmount}$nameSuffix • $dateStr", 
                                     style = MaterialTheme.typography.bodySmall, 
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, 
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Visible
                             )
                         }
                     }

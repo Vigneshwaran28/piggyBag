@@ -76,7 +76,7 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    private fun AppDatabase.syncQueueDao() = this.syncQueueDao() // helper accessor
+
 
     init {
         checkSession()
@@ -84,20 +84,19 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
 
     private fun checkSession() {
         viewModelScope.launch {
-            repository.currentUserFlow.collect { user ->
-                val hasToken = sessionManager.getAuthToken() != null
-                if (user != null && hasToken) {
-                    _authState.value = CloudAuthState.LoggedIn(user)
-                    if (sessionManager.isAutoSyncEnabled()) {
-                        scheduleAutoSync()
-                    }
-                } else {
-                    // If one exists but not the other, we are in an inconsistent state
-                    if (user != null || hasToken) {
-                        repository.logout()
-                    }
-                    _authState.value = CloudAuthState.LoggedOut
+            val user = repository.userDao.getCurrentUserDirect()
+            val hasToken = sessionManager.getAuthToken() != null
+            if (user != null && hasToken) {
+                _authState.value = CloudAuthState.LoggedIn(user)
+                if (sessionManager.isAutoSyncEnabled()) {
+                    scheduleAutoSync()
                 }
+            } else {
+                // If one exists but not the other, we are in an inconsistent state
+                if (user != null || hasToken) {
+                    repository.logout()
+                }
+                _authState.value = CloudAuthState.LoggedOut
             }
         }
     }
@@ -185,6 +184,9 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
             val result = repository.register(username, email, password, displayName, deviceId)
             _isAuthProcessing.value = false
             if (result.isSuccess) {
+                val user = result.getOrThrow()
+                _authState.value = CloudAuthState.LoggedIn(user)
+                syncNow()
                 launch(Dispatchers.Main) { onResult(true, null) }
             } else {
                 val msg = result.exceptionOrNull()?.message ?: "Registration failed"
@@ -207,6 +209,9 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
             val result = repository.login(identifier, password, deviceId)
             _isAuthProcessing.value = false
             if (result.isSuccess) {
+                val user = result.getOrThrow()
+                _authState.value = CloudAuthState.LoggedIn(user)
+                syncNow()
                 launch(Dispatchers.Main) { onResult(true, null) }
             } else {
                 val msg = result.exceptionOrNull()?.message ?: "Login failed"
@@ -217,7 +222,7 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun loginWithGoogle(idToken: String, displayName: String? = null, profilePhoto: String? = null, onResult: (Boolean, String?) -> Unit) {
+    fun loginWithGoogle(idToken: String, displayName: String? = null, profilePhoto: String? = null, onResult: (Boolean, Boolean, String?) -> Unit) {
         _isAuthProcessing.value = true
         _authError.value = null
         _authState.value = CloudAuthState.Loading
@@ -229,11 +234,33 @@ class CloudJournalViewModel(application: Application) : AndroidViewModel(applica
             val result = repository.loginWithGoogle(idToken, displayName, profilePhoto, deviceId)
             _isAuthProcessing.value = false
             if (result.isSuccess) {
-                launch(Dispatchers.Main) { onResult(true, null) }
+                val pair = result.getOrThrow()
+                val user = pair.first
+                val isNew = pair.second
+                _authState.value = CloudAuthState.LoggedIn(user)
+                syncNow()
+                launch(Dispatchers.Main) { onResult(true, isNew, null) }
             } else {
                 val msg = result.exceptionOrNull()?.message ?: "Google login failed"
                 _authError.value = msg
                 _authState.value = CloudAuthState.LoginFailed(msg)
+                launch(Dispatchers.Main) { onResult(false, false, msg) }
+            }
+        }
+    }
+
+    private val _isSettingPassword = MutableStateFlow(false)
+    val isSettingPassword = _isSettingPassword.asStateFlow()
+
+    fun setPassword(password: String, onResult: (Boolean, String?) -> Unit) {
+        _isSettingPassword.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.setPassword(password)
+            _isSettingPassword.value = false
+            if (result.isSuccess) {
+                launch(Dispatchers.Main) { onResult(true, null) }
+            } else {
+                val msg = result.exceptionOrNull()?.message ?: "Failed to set password"
                 launch(Dispatchers.Main) { onResult(false, msg) }
             }
         }

@@ -25,9 +25,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import com.titanbag.app.data.LocalUserProfile
 import com.titanbag.app.data.PartnerConnection
 import com.titanbag.app.data.TitanBagViewModel
+import com.titanbag.app.data.CloudJournalViewModel
 import com.titanbag.app.data.TransactionWithDetails
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -37,6 +47,7 @@ import java.util.Locale
 @Composable
 fun PartnerSharingScreen(
     viewModel: TitanBagViewModel,
+    cloudViewModel: CloudJournalViewModel,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -45,7 +56,10 @@ fun PartnerSharingScreen(
     val connections by viewModel.partnerConnections.collectAsState()
     val activeProfile = profiles.find { it.id == activeUserId }
 
-    var codeInput by remember { mutableStateOf("") }
+    val segments = remember { mutableStateListOf("", "", "", "", "") }
+    val codeInput = remember(segments[0], segments[1], segments[2], segments[3], segments[4]) {
+        segments.joinToString("-")
+    }
     var isCodeRevealed by remember { mutableStateOf(false) }
     var viewingPartnerTransactionsProfile by remember { mutableStateOf<LocalUserProfile?>(null) }
 
@@ -62,13 +76,50 @@ fun PartnerSharingScreen(
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            if (activeUserId == "default_user") {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(72.dp)
+                            )
+                            Text(
+                                text = "Cloud Account Required",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Partner sharing requires a PiggyBag cloud account to synchronize transactions securely. Please sign in or register to enable partner sharing.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 // Section 1: My Partner Code
                 Text(
                     "My Share Profile",
@@ -187,26 +238,35 @@ fun PartnerSharingScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedTextField(
-                            value = codeInput,
-                            onValueChange = { codeInput = it.uppercase() },
-                            label = { Text("Partner Share Code") },
-                            placeholder = { Text("ABCD1234") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        PartnerCodeSegmentedInput(segments = segments)
 
                         Button(
                             onClick = {
-                                viewModel.connectPartnerLocal(codeInput) { success, msg ->
-                                    Toast.makeText(context, msg ?: "Result received", Toast.LENGTH_SHORT).show()
-                                    if (success) {
-                                        codeInput = ""
+                                if (activeUserId != "default_user") {
+                                    cloudViewModel.connectPartner(codeInput) { success, msg ->
+                                        Toast.makeText(context, msg ?: "Result received", Toast.LENGTH_SHORT).show()
+                                        if (success) {
+                                            segments[0] = ""
+                                            segments[1] = ""
+                                            segments[2] = ""
+                                            segments[3] = ""
+                                            segments[4] = ""
+                                        }
+                                    }
+                                } else {
+                                    viewModel.connectPartnerLocal(codeInput) { success, msg ->
+                                        Toast.makeText(context, msg ?: "Result received", Toast.LENGTH_SHORT).show()
+                                        if (success) {
+                                            segments[0] = ""
+                                            segments[1] = ""
+                                            segments[2] = ""
+                                            segments[3] = ""
+                                            segments[4] = ""
+                                        }
                                     }
                                 }
                             },
-                            enabled = codeInput.isNotBlank(),
+                            enabled = segments[0].length == 3 && segments[1].length == 4 && segments[2].length == 4 && segments[3].length == 4 && segments[4].length == 4,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -309,6 +369,7 @@ fun PartnerSharingScreen(
                     }
                 }
             }
+        }
 
             // Shared Journal Read Only Viewer overlay
             viewingPartnerTransactionsProfile?.let { partner ->
@@ -498,4 +559,123 @@ fun SharedJournalTransactionsDialog(
             }
         }
     )
+}
+
+private fun formatPartnerCode(input: String): String {
+    val clean = input.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
+    val sb = StringBuilder()
+    for (i in clean.indices) {
+        if (i > 0 && i % 3 == 0) {
+            sb.append("-")
+        }
+        sb.append(clean[i])
+    }
+    return sb.toString()
+}
+
+@Composable
+fun PartnerCodeSegmentedInput(
+    segments: androidx.compose.runtime.snapshots.SnapshotStateList<String>
+) {
+    val focusRequesters = remember { List(5) { FocusRequester() } }
+    val segmentLengths = listOf(3, 4, 4, 4, 4)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (i in 0..4) {
+            val maxLength = segmentLengths[i]
+            val focusRequester = focusRequesters[i]
+            
+            Box(
+                modifier = Modifier.weight(maxLength.toFloat()),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = segments[i],
+                    onValueChange = { input ->
+                        val filtered = input.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
+                        if (filtered.length <= maxLength) {
+                            segments[i] = filtered
+                            if (filtered.length == maxLength && i < 4) {
+                                focusRequesters[i + 1].requestFocus()
+                            }
+                        } else if (filtered.length > maxLength) {
+                            var remaining = filtered
+                            for (j in i..4) {
+                                val spaceLeft = segmentLengths[j]
+                                val chunk = remaining.take(spaceLeft)
+                                segments[j] = chunk
+                                remaining = remaining.drop(spaceLeft)
+                                if (remaining.isEmpty()) {
+                                    focusRequesters[j].requestFocus()
+                                    break
+                                }
+                            }
+                            if (remaining.isNotEmpty()) {
+                                focusRequesters[4].requestFocus()
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && 
+                                keyEvent.key == androidx.compose.ui.input.key.Key.Backspace) {
+                                if (segments[i].isEmpty() && i > 0) {
+                                    segments[i - 1] = segments[i - 1].dropLast(1)
+                                    focusRequesters[i - 1].requestFocus()
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        .border(
+                            BorderStroke(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false
+                    )
+                )
+                
+                if (segments[i].isEmpty()) {
+                    Text(
+                        text = "X".repeat(maxLength),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+            
+            if (i < 4) {
+                Text(
+                    text = "-",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+            }
+        }
+    }
 }

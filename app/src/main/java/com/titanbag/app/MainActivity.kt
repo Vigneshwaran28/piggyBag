@@ -19,9 +19,12 @@ import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -122,52 +125,54 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    private var isRequestingPermission = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val hasNotificationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.POST_NOTIFICATIONS
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            if (!hasNotificationPermission) {
-                androidx.core.app.ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    101
-                )
-            }
-        }
-
-        // Request SMS Permission
-        val hasSmsPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-            this,
-            android.Manifest.permission.RECEIVE_SMS
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-        if (!hasSmsPermission) {
-            androidx.core.app.ActivityCompat.requestPermissions(
-                this,
-                arrayOf(android.Manifest.permission.RECEIVE_SMS, android.Manifest.permission.READ_SMS),
-                102
-            )
-        }
-
         setContent {
             val settings by viewModel.settings.collectAsState()
             val cloudUser by cloudViewModel.currentUser.collectAsState(initial = null)
+            val fontStyle by viewModel.fontStyle.collectAsState()
+
+            // Handle permissions in a safe way
+            LaunchedEffect(Unit) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    val hasNotificationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (!hasNotificationPermission) {
+                        isRequestingPermission = true
+                        androidx.core.app.ActivityCompat.requestPermissions(
+                            this@MainActivity,
+                            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                            101
+                        )
+                        // Reset after a delay or in onRequestPermissionsResult
+                    }
+                }
+            }
 
             LaunchedEffect(cloudUser) {
                 val activeUserId = viewModel.currentUserId.value
+                val hasSecureSession = cloudViewModel.sessionManager.isLoggedIn()
+                val secureUserId = cloudViewModel.sessionManager.getUserId()
                 if (cloudUser != null) {
                     if (activeUserId != cloudUser!!.id) {
-                        viewModel.switchLocalUser(cloudUser!!.id)
+                        viewModel.switchLocalUser(cloudUser!!.id, showFeedback = false)
                     }
                 } else {
-                    if (activeUserId != "default_user") {
-                        viewModel.switchLocalUser("default_user")
+                    if (!hasSecureSession || secureUserId == null) {
+                        if (activeUserId != "default_user") {
+                            viewModel.switchLocalUser("default_user", showFeedback = false)
+                        }
+                    } else {
+                        if (activeUserId != secureUserId) {
+                            viewModel.switchLocalUser(secureUserId, showFeedback = false)
+                        }
                     }
                 }
             }
@@ -179,13 +184,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 else -> isSystemInDarkTheme()
             }
 
+            val visualStyle by viewModel.visualStyle.collectAsState()
+
             MyApplicationTheme(
                 darkTheme = isDark,
                 colorPalette = settings?.colorPalette ?: "Default",
                 customColorHex = settings?.customColor,
                 customIconColorHex = settings?.customIconColor,
                 customBgColorHex = settings?.customBgColor,
-                themeModeSetting = settings?.themeMode ?: "system"
+                themeModeSetting = settings?.themeMode ?: "system",
+                fontStyle = fontStyle,
+                visualStyle = visualStyle
             ) {
                 val isLocked by viewModel.isLocked.collectAsState()
 
@@ -207,10 +216,34 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         cloudViewModel = cloudViewModel,
                         onExportCsv = { csvExportLauncher.launch("titanbag_transactions.csv") },
                         onImportCsv = { csvImportLauncher.launch("text/comma-separated-values") },
-                        onExportPdf = { pdfExportLauncher.launch("titanbag_transactions.pdf") },
-                        onShowNotification = { title, msg -> showSystemNotification(title, msg) }
+                        onExportPdf = { filename -> pdfExportLauncher.launch(filename) },
+                        onShowNotification = { title, msg, dest -> showSystemNotification(title, msg, dest) }
                     )
                 }
+            }
+        }
+
+        intent?.getStringExtra("navigate_to")?.let {
+            if (isValidNavigationDestination(it)) {
+                viewModel.navigateTo(it)
+            }
+        }
+    }
+
+    private fun isValidNavigationDestination(destination: String): Boolean {
+        val validDestinations = listOf(
+            "debt_list", "reminders", "autopay", "categories", "budgets", 
+            "accounts", "analytics", "records", "search_transactions"
+        )
+        return validDestinations.contains(destination)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("navigate_to")?.let {
+            if (isValidNavigationDestination(it)) {
+                viewModel.navigateTo(it)
             }
         }
     }
@@ -234,8 +267,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             })
 
         val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-            .setTitle("TitanBag Secure Unlock")
-            .setSubtitle("Authenticate using biometrics to access financial vault")
+            .setTitle("PiggyBag Secure Unlock")
+            .setSubtitle("Authenticate using biometrics to access your financial vault")
             .setNegativeButtonText("Use PIN / Cancel")
             .build()
 
@@ -246,23 +279,26 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
-    private fun showSystemNotification(title: String, message: String) {
+    private fun showSystemNotification(title: String, message: String, destination: String? = null) {
         val channelId = "titanbag_alerts"
         val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
                 channelId,
-                "TitanBag Alerts",
+                "PiggyBag Alerts",
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Alert notifications for TitanBag app"
+                description = "Alert notifications for PiggyBag app"
             }
             notificationManager.createNotificationChannel(channel)
         }
         
         val intent = android.content.Intent(this, MainActivity::class.java).apply {
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (destination != null) {
+                putExtra("navigate_to", destination)
+            }
         }
         val pendingIntent = android.app.PendingIntent.getActivity(
             this, 0, intent,
@@ -284,8 +320,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Auto-lock when leaving application to background if App Lock is configured
-        viewModel.lockApp()
+        // Avoid auto-locking when a system dialog (like permissions) is shown, 
+        // which erroneously triggers onUserLeaveHint on some Samsung devices.
+        if (!isRequestingPermission) {
+            viewModel.lockApp()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101) {
+            isRequestingPermission = false
+        }
     }
 }
 
@@ -296,13 +342,24 @@ fun MainAppContent(
     cloudViewModel: CloudJournalViewModel,
     onExportCsv: () -> Unit,
     onImportCsv: () -> Unit,
-    onExportPdf: () -> Unit,
-    onShowNotification: (String, String) -> Unit = { _, _ -> }
+    onExportPdf: (String) -> Unit,
+    onShowNotification: (String, String, String?) -> Unit = { _, _, _ -> }
 ) {
     val currentTab by viewModel.currentTab.collectAsState()
+    val settings by viewModel.settings.collectAsState()
     
+    // Quick log prefill states
+    var selectedQuickLogVehicleId by remember { mutableStateOf<Int?>(null) }
+    var selectedQuickLogCategoryId by remember { mutableStateOf<Int?>(null) }
+    var selectedQuickLogSubcategoryId by remember { mutableStateOf<Int?>(null) }
+
     // Form navigation overlays
-    val activeFormStack = remember { mutableStateListOf<String>() }
+    val activeFormStack = rememberSaveable(
+        saver = listSaver(
+            save = { it.toList() },
+            restore = { it.toMutableStateList() }
+        )
+    ) { mutableStateListOf<String>() }
     var selectedTransactionToEdit by remember { mutableStateOf<TransactionWithDetails?>(null) }
     var lastNonNullTxToEdit by remember { mutableStateOf<TransactionWithDetails?>(null) }
     var selectedAccountToEdit by remember { mutableStateOf<Account?>(null) }
@@ -389,9 +446,18 @@ fun MainAppContent(
     // Listen to localized alerts / budget warnings from SharedFlow
     val context = LocalContext.current
     LaunchedEffect(Unit) {
-        viewModel.notificationMessage.collect { msg ->
-            viewModel.showSnackbar(msg)
-            onShowNotification("TitanBag Alert", msg)
+        viewModel.notificationMessage.collect { event ->
+            viewModel.showSnackbar(event.message)
+            onShowNotification(event.title, event.message, event.destination)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigationCommand.collect { destination ->
+            if (destination == "debt_list") {
+                viewModel.selectTab(4)
+                activeForm = "debt_list"
+            }
         }
     }
     
@@ -446,6 +512,11 @@ fun MainAppContent(
                 }
             },
             bottomBar = {
+                val defaultTabs = listOf("Home", "Analytics", "Budgets", "Accounts", "More")
+                val configuredTabs = remember(settings) {
+                    settings?.bottomTabs?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: defaultTabs
+                }
+                
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 8.dp,
@@ -454,41 +525,31 @@ fun MainAppContent(
                         .zIndex(1f)
                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 ) {
-                    NavigationBarItem(
-                        selected = currentTab == 0,
-                        onClick = { viewModel.selectTab(0) },
-                        icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
-                        label = { Text("Home", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
-                        modifier = Modifier.testTag("tab_records")
-                    )
-                    NavigationBarItem(
-                        selected = currentTab == 1,
-                        onClick = { viewModel.selectTab(1) },
-                        icon = { Icon(Icons.Rounded.BarChart, contentDescription = null) },
-                        label = { Text("Analytics", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
-                        modifier = Modifier.testTag("tab_analysis")
-                    )
-                    NavigationBarItem(
-                        selected = currentTab == 2,
-                        onClick = { viewModel.selectTab(2) },
-                        icon = { Icon(Icons.Rounded.DonutLarge, contentDescription = null) },
-                        label = { Text("Budgets", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
-                        modifier = Modifier.testTag("tab_budgets")
-                    )
-                    NavigationBarItem(
-                        selected = currentTab == 3,
-                        onClick = { viewModel.selectTab(3) },
-                        icon = { Icon(Icons.Rounded.AccountBalance, contentDescription = null) },
-                        label = { Text("Accounts", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
-                        modifier = Modifier.testTag("tab_accounts")
-                    )
-                    NavigationBarItem(
-                        selected = currentTab == 4,
-                        onClick = { viewModel.selectTab(4) },
-                        icon = { Icon(Icons.Rounded.MoreHoriz, contentDescription = null) },
-                        label = { Text("More", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
-                        modifier = Modifier.testTag("tab_more")
-                    )
+                    configuredTabs.take(5).forEachIndexed { idx, tab ->
+                        val icon = when (tab) {
+                            "Home" -> Icons.Rounded.Home
+                            "Analytics" -> Icons.Rounded.BarChart
+                            "Budgets" -> Icons.Rounded.DonutLarge
+                            "Accounts" -> Icons.Rounded.AccountBalance
+                            "Transactions" -> Icons.Rounded.List
+                            "Debt" -> Icons.Rounded.ListAlt
+                            "Partner Sharing" -> Icons.Rounded.People
+                            "Group Expenses" -> Icons.Rounded.Group
+                            "AutoPay" -> Icons.Rounded.Update
+                            "Investments" -> Icons.AutoMirrored.Rounded.ShowChart
+                            "Subscriptions" -> Icons.Rounded.CardMembership
+                            "Categories" -> Icons.Rounded.Category
+                            else -> Icons.Rounded.MoreHoriz
+                        }
+                        
+                        NavigationBarItem(
+                            selected = currentTab == idx,
+                            onClick = { viewModel.selectTab(idx) },
+                            icon = { Icon(icon, contentDescription = null) },
+                            label = { Text(tab, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) },
+                            modifier = Modifier.testTag("tab_${tab.lowercase().replace(" ", "_")}")
+                        )
+                    }
                 }
             }
         ) { innerPadding ->
@@ -499,6 +560,11 @@ fun MainAppContent(
                     )
                     .fillMaxSize()
             ) {
+                val defaultTabs = listOf("Home", "Analytics", "Budgets", "Accounts", "More")
+                val configuredTabs = remember(settings) {
+                    settings?.bottomTabs?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: defaultTabs
+                }
+
                 androidx.compose.animation.AnimatedContent(
                     targetState = currentTab,
                     transitionSpec = {
@@ -531,8 +597,9 @@ fun MainAppContent(
                     modifier = Modifier.fillMaxSize(),
                     label = "tab_animated_content"
                 ) { page ->
-                    when (page) {
-                        0 -> {
+                    val tabName = configuredTabs.getOrNull(page) ?: "Home"
+                    when (tabName) {
+                        "Home" -> {
                             RecordsScreen(
                                 viewModel = viewModel,
                                 onEditTransaction = { tx ->
@@ -545,13 +612,13 @@ fun MainAppContent(
                                 onSearchClick = { activeForm = "search_transactions" }
                             )
                         }
-                        1 -> {
+                        "Analytics" -> {
                             AnalysisScreen(
                                 viewModel = viewModel,
                                 onSearchClick = { activeForm = "search_transactions" }
                             )
                         }
-                        2 -> {
+                        "Budgets" -> {
                             BudgetsScreen(
                                 viewModel = viewModel,
                                 onNavigateToAddBudget = { activeForm = "add_budget" },
@@ -562,7 +629,7 @@ fun MainAppContent(
                                 }
                             )
                         }
-                        3 -> {
+                        "Accounts" -> {
                             AccountsScreen(
                                 viewModel = viewModel,
                                 onAddAccountClick = { activeForm = "add_account" },
@@ -576,7 +643,71 @@ fun MainAppContent(
                                 }
                             )
                         }
-                        4 -> {
+                        "Transactions" -> {
+                            RecordsScreen(
+                                viewModel = viewModel,
+                                onEditTransaction = { tx ->
+                                    previousForm = null
+                                    selectedTransactionToEdit = tx
+                                    lastNonNullTxToEdit = tx
+                                    activeForm = "edit_transaction"
+                                },
+                                onAddTransactionClick = { activeForm = "add_transaction" },
+                                onSearchClick = { activeForm = "search_transactions" }
+                            )
+                        }
+                        "Debt" -> {
+                            DebtListScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "Partner Sharing" -> {
+                            PartnerSharingScreen(
+                                viewModel = viewModel,
+                                cloudViewModel = cloudViewModel,
+                                onBack = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "Group Expenses" -> {
+                            GroupExpenseSplitScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "AutoPay" -> {
+                            AutoPayScreen(
+                                viewModel = viewModel,
+                                onDismiss = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "Investments" -> {
+                            InvestmentScreen(
+                                viewModel = viewModel,
+                                onDismiss = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "Subscriptions" -> {
+                            SubscriptionScreen(
+                                viewModel = viewModel,
+                                onDismiss = { viewModel.selectTab(0) }
+                            )
+                        }
+                        "Categories" -> {
+                            CategoriesScreen(
+                                viewModel = viewModel,
+                                onNavigateToAddCategory = {
+                                    activeForm = "add_category"
+                                },
+                                onEditCategory = { category ->
+                                    selectedCategoryToEdit = category
+                                    lastNonNullCategoryToEdit = category
+                                    activeForm = "edit_category"
+                                },
+                                onDismiss = { viewModel.selectTab(0) }
+                            )
+                        }
+                        else -> { // More
                             MoreScreen(
                                 viewModel = viewModel,
                                 cloudViewModel = cloudViewModel,
@@ -594,7 +725,13 @@ fun MainAppContent(
                                 onNavigateToFinanceDashboard = { activeForm = "finance_dashboard" },
                                 onNavigateToPartnerSharing = { activeForm = "partner_sharing" },
                                 onNavigateToGroupExpenseSplit = { activeForm = "group_expense_split" },
-                                onNavigateToDebtList = { activeForm = "debt_list" }
+                                onNavigateToDebtList = { activeForm = "debt_list" },
+                                onNavigateToThemeCustomization = { activeForm = "theme_customization" },
+                                onNavigateToHelpGuide = { activeForm = "help_guide" },
+
+                                onNavigateToReminders = { activeForm = "reminders" },
+                                onNavigateToAutoPay = { activeForm = "autopay" },
+                                onNavigateToNavigationCustomization = { activeForm = "navigation_customization" }
                             )
                         }
                     }
@@ -725,9 +862,17 @@ fun MainAppContent(
                     "add_transaction" -> {
                         TransactionForm(
                             viewModel = viewModel,
+                            initialVehicleId = selectedQuickLogVehicleId,
+                            initialCategoryId = selectedQuickLogCategoryId,
+                            initialSubcategoryId = selectedQuickLogSubcategoryId,
                             onNavigateToAddCategory = { activeForm = "add_category" },
                             onNavigateToAddAccount = { activeForm = "add_account" },
-                            onDismiss = { activeForm = null }
+                            onDismiss = { 
+                                activeForm = null
+                                selectedQuickLogVehicleId = null
+                                selectedQuickLogCategoryId = null
+                                selectedQuickLogSubcategoryId = null
+                            }
                         )
                     }
                     "edit_transaction" -> {
@@ -903,12 +1048,24 @@ fun MainAppContent(
                                onBack = { activeForm = null }
                            )
                        }
-                       "partner_sharing" -> {
-                           PartnerSharingScreen(
-                               viewModel = viewModel,
-                               onBack = { activeForm = null }
-                           )
-                       }
+                         "partner_sharing" -> {
+                             PartnerSharingScreen(
+                                 viewModel = viewModel,
+                                 cloudViewModel = cloudViewModel,
+                                 onBack = { activeForm = null }
+                             )
+                         }
+                         "theme_customization" -> {
+                             ThemeCustomizationScreen(
+                                 viewModel = viewModel,
+                                 onBack = { activeForm = null }
+                             )
+                         }
+                         "help_guide" -> {
+                             HelpGuideScreen(
+                                 onBack = { activeForm = null }
+                             )
+                         }
                        "group_expense_split" -> {
                            GroupExpenseSplitScreen(
                                viewModel = viewModel,
@@ -982,13 +1139,26 @@ fun MainAppContent(
                                )
                            }
                        }
-                       "debt_list" -> {
-                           DebtListScreen(
-                               viewModel = viewModel,
-                               onBack = { activeForm = null }
-                           )
-                       }
-                   }
+
+                        "reminders" -> {
+                            ReminderScreen(
+                                viewModel = viewModel,
+                                onDismiss = { activeForm = null }
+                            )
+                        }
+                        "autopay" -> {
+                            AutoPayScreen(
+                                viewModel = viewModel,
+                                onDismiss = { activeForm = null }
+                            )
+                        }
+                        "navigation_customization" -> {
+                            NavigationCustomizationScreen(
+                                viewModel = viewModel,
+                                onBack = { activeForm = null }
+                            )
+                        }
+                    }
             }
         }
 

@@ -25,6 +25,16 @@ class Repository(private val db: AppDatabase) {
     val groupMemberDao = db.groupMemberDao()
     val groupExpenseDao = db.groupExpenseDao()
     val debtRecordDao = db.debtRecordDao()
+    val lifeAreaDao = db.lifeAreaDao()
+    val subcategoryDao = db.subcategoryDao()
+    val purposeDao = db.purposeDao()
+    val vehicleDao = db.vehicleDao()
+    val investmentDao = db.investmentDao()
+    val subscriptionDao = db.subscriptionDao()
+    val reminderDao = db.reminderDao()
+    val goldSilverPriceDao = db.goldSilverPriceDao()
+    val groupSettlementDao = db.groupSettlementDao()
+    val autoPayDao = db.autoPayDao()
 
     // --- ACCOUNTS ---
     val allAccounts: Flow<List<Account>> = accountDao.getAllAccounts()
@@ -196,9 +206,26 @@ class Repository(private val db: AppDatabase) {
             for (rule in dueRules) {
                 if (rule.nextExecutionDate <= nowStr) {
                     var execDateStr = rule.nextExecutionDate
+                    var ruleEnabled = rule.enabled
+                    var remainingCount = if (rule.endConditionType == "count") {
+                        rule.endConditionValue.toIntOrNull() ?: 1
+                    } else {
+                        999999
+                    }
                     
                     // While the execution date is in the past/today, generate transactions and advance
-                    while (execDateStr <= nowStr) {
+                    while (execDateStr <= nowStr && ruleEnabled) {
+                        // Check end condition date
+                        if (rule.endConditionType == "date" && execDateStr > rule.endConditionValue) {
+                            ruleEnabled = false
+                            break
+                        }
+                        // Check end condition count
+                        if (rule.endConditionType == "count" && remainingCount <= 0) {
+                            ruleEnabled = false
+                            break
+                        }
+
                         val transaction = Transaction(
                             amount = rule.amount,
                             type = rule.type,
@@ -222,13 +249,24 @@ class Repository(private val db: AppDatabase) {
                         }
                         transactionDao.insertTransaction(transaction)
 
+                        if (rule.endConditionType == "count") {
+                            remainingCount--
+                            if (remainingCount <= 0) {
+                                ruleEnabled = false
+                            }
+                        }
+
                         // Advance execution date
                         execDateStr = advanceDate(execDateStr, rule.frequency)
                     }
 
-                    // Update rule in database with new execution date
+                    // Update rule in database with new execution date, enabled status and remaining count
                     recurringTransactionDao.updateRecurringTransaction(
-                        rule.copy(nextExecutionDate = execDateStr)
+                        rule.copy(
+                            nextExecutionDate = execDateStr,
+                            enabled = ruleEnabled,
+                            endConditionValue = if (rule.endConditionType == "count") remainingCount.toString() else rule.endConditionValue
+                        )
                     )
                 }
             }
@@ -307,4 +345,73 @@ class Repository(private val db: AppDatabase) {
     suspend fun insertDebtRecord(record: DebtRecord) = debtRecordDao.insertDebtRecord(record)
     suspend fun updateDebtRecord(record: DebtRecord) = debtRecordDao.updateDebtRecord(record)
     suspend fun deleteDebtRecord(record: DebtRecord) = debtRecordDao.deleteDebtRecord(record)
+
+    // --- LIFE AREAS ---
+    val allLifeAreas: Flow<List<LifeArea>> = lifeAreaDao.getAllLifeAreas()
+    suspend fun insertLifeArea(lifeArea: LifeArea): Long = lifeAreaDao.insertLifeArea(lifeArea)
+    suspend fun updateLifeArea(lifeArea: LifeArea) = lifeAreaDao.updateLifeArea(lifeArea)
+    suspend fun deleteLifeArea(lifeArea: LifeArea) = lifeAreaDao.deleteLifeArea(lifeArea)
+
+    // --- SUBCATEGORIES ---
+    val allSubcategories: Flow<List<Subcategory>> = subcategoryDao.getAllSubcategories()
+    fun getSubcategoriesForCategory(categoryId: Int): Flow<List<Subcategory>> = subcategoryDao.getSubcategoriesForCategory(categoryId)
+    suspend fun insertSubcategory(subcategory: Subcategory): Long = subcategoryDao.insertSubcategory(subcategory)
+    suspend fun updateSubcategory(subcategory: Subcategory) = subcategoryDao.updateSubcategory(subcategory)
+    suspend fun deleteSubcategory(subcategory: Subcategory) = subcategoryDao.deleteSubcategory(subcategory)
+
+    // --- PURPOSES ---
+    val allPurposes: Flow<List<Purpose>> = purposeDao.getAllPurposes()
+    fun getPurposesForSubcategory(subcategoryId: Int): Flow<List<Purpose>> = purposeDao.getPurposesForSubcategory(subcategoryId)
+    suspend fun insertPurpose(purpose: Purpose): Long = purposeDao.insertPurpose(purpose)
+    suspend fun updatePurpose(purpose: Purpose) = purposeDao.updatePurpose(purpose)
+    suspend fun deletePurpose(purpose: Purpose) = purposeDao.deletePurpose(purpose)
+
+    // --- VEHICLES ---
+    val allVehicles: Flow<List<Vehicle>> = vehicleDao.getAllVehicles()
+    suspend fun getVehicleById(id: Int): Vehicle? = vehicleDao.getVehicleById(id)
+    suspend fun insertVehicle(vehicle: Vehicle): Long = vehicleDao.insertVehicle(vehicle)
+    suspend fun updateVehicle(vehicle: Vehicle) = vehicleDao.updateVehicle(vehicle)
+    suspend fun deleteVehicle(vehicle: Vehicle) = vehicleDao.deleteVehicle(vehicle)
+
+    // --- INVESTMENTS ---
+    val allInvestments: Flow<List<Investment>> = investmentDao.getAllInvestments()
+    suspend fun getInvestmentById(id: Int): Investment? = investmentDao.getInvestmentById(id)
+    suspend fun insertInvestment(investment: Investment): Long = investmentDao.insertInvestment(investment)
+    suspend fun updateInvestment(investment: Investment) = investmentDao.updateInvestment(investment)
+    suspend fun deleteInvestment(investment: Investment) = investmentDao.deleteInvestment(investment)
+
+    // --- SUBSCRIPTIONS ---
+    val allSubscriptions: Flow<List<Subscription>> = subscriptionDao.getAllSubscriptions()
+    suspend fun getSubscriptionById(id: Int): Subscription? = subscriptionDao.getSubscriptionById(id)
+    suspend fun insertSubscription(subscription: Subscription): Long = subscriptionDao.insertSubscription(subscription)
+    suspend fun updateSubscription(subscription: Subscription) = subscriptionDao.updateSubscription(subscription)
+    suspend fun deleteSubscription(subscription: Subscription) = subscriptionDao.deleteSubscription(subscription)
+
+    // --- REMINDERS ---
+    val allReminders: Flow<List<Reminder>> = reminderDao.getAllReminders()
+    suspend fun getActiveRemindersDirect(): List<Reminder> = reminderDao.getActiveRemindersDirect()
+    suspend fun insertReminder(reminder: Reminder): Long = reminderDao.insertReminder(reminder)
+    suspend fun updateReminder(reminder: Reminder) = reminderDao.updateReminder(reminder)
+    suspend fun deleteReminder(reminder: Reminder) = reminderDao.deleteReminder(reminder)
+
+    // --- GOLD & SILVER PRICES ---
+    val allCachedPrices: Flow<List<GoldSilverPrice>> = goldSilverPriceDao.getAllCachedPrices()
+    suspend fun getPriceForDate(date: String): GoldSilverPrice? = goldSilverPriceDao.getPriceForDate(date)
+    suspend fun insertPrice(price: GoldSilverPrice) = goldSilverPriceDao.insertPrice(price)
+
+    // --- AUTOPAYS ---
+    val allAutoPays: Flow<List<AutoPay>> = autoPayDao.getAllAutoPays()
+    suspend fun getActiveAutoPaysDirect(): List<AutoPay> = autoPayDao.getActiveAutoPaysDirect()
+    suspend fun getAutoPayById(id: Int): AutoPay? = autoPayDao.getAutoPayById(id)
+    suspend fun insertAutoPay(autoPay: AutoPay): Long = autoPayDao.insertAutoPay(autoPay)
+    suspend fun updateAutoPay(autoPay: AutoPay) = autoPayDao.updateAutoPay(autoPay)
+    suspend fun deleteAutoPay(autoPay: AutoPay) = autoPayDao.deleteAutoPay(autoPay)
+
+    // --- GROUP SETTLEMENTS ---
+    fun getSettlementsForGroupFlow(groupId: String): Flow<List<GroupSettlement>> = groupSettlementDao.getSettlementsForGroupFlow(groupId)
+    suspend fun getSettlementsForGroupDirect(groupId: String): List<GroupSettlement> = groupSettlementDao.getSettlementsForGroupDirect(groupId)
+    suspend fun insertSettlement(settlement: GroupSettlement) = groupSettlementDao.insertSettlement(settlement)
+    suspend fun insertSettlements(settlements: List<GroupSettlement>) = groupSettlementDao.insertSettlements(settlements)
+    suspend fun updateSettlement(settlement: GroupSettlement) = groupSettlementDao.updateSettlement(settlement)
+    suspend fun deleteSettlementsForGroup(groupId: String) = groupSettlementDao.deleteSettlementsForGroup(groupId)
 }

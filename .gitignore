@@ -42,3 +42,5 @@ Thumbs.db
 
 # Firebase
 google-services.json
+*.md
+!README.md

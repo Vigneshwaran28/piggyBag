@@ -38,6 +38,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.titanbag.app.data.Account
 import com.titanbag.app.data.TitanBagViewModel
+import com.titanbag.app.ui.theme.LocalVisualStyle
 import com.titanbag.app.ui.components.IconMapper
 import com.titanbag.app.ui.components.AnimatedEntranceItem
 
@@ -72,6 +73,9 @@ fun AccountsScreen(
     val animIncome by androidx.compose.animation.core.animateFloatAsState(targetValue = totalIncome.toFloat(), label = "totalIncome", animationSpec = com.titanbag.app.ui.components.TitanBagAnimations.defaultTween())
     val animExpense by androidx.compose.animation.core.animateFloatAsState(targetValue = totalExpense.toFloat(), label = "totalExpense", animationSpec = com.titanbag.app.ui.components.TitanBagAnimations.defaultTween())
 
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,12 +98,12 @@ fun AccountsScreen(
 
             // Balance Card
             Card(
-                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.4f), RoundedCornerShape(24.dp)),
+                modifier = Modifier.fillMaxWidth().border(1.dp, if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.4f), RoundedCornerShape(24.dp)),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = if (isDiary) Color(0xFFFFFDE7) else MaterialTheme.colorScheme.surface
                 ),
                 shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -115,7 +119,7 @@ fun AccountsScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = "Total Balance",
-                                style = MaterialTheme.typography.titleMedium.copy(
+                                style = if (isDiary) MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 ),
@@ -124,12 +128,12 @@ fun AccountsScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             val netWorthColor = when {
                                 netWorth < 0.0 -> Color(0xFFFF7575)
-                                netWorth > 0.0 -> Color(0xFF81C784)
+                                netWorth > 0.0 -> if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784)
                                 else -> MaterialTheme.colorScheme.onSurface
                             }
                             Text(
                                 text = formatCurrency(animNetWorth.toDouble(), currencySymbol),
-                                style = MaterialTheme.typography.headlineLarge.copy(
+                                style = if (isDiary) MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.headlineLarge.copy(
                                     fontSize = 28.sp,
                                     fontWeight = FontWeight.Black,
                                     letterSpacing = (-0.5).sp
@@ -140,7 +144,7 @@ fun AccountsScreen(
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                    HorizontalDivider(color = if (isDiary) Color(0xFFD4E3FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Side-by-Side Income and Expense displays
@@ -159,13 +163,13 @@ fun AccountsScreen(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFE2F6EA).copy(alpha = 0.9f)),
+                                    .background(if (isDiary) Color(0xFFF1F8E9) else Color(0xFFE2F6EA).copy(alpha = 0.9f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.ArrowUpward,
                                     contentDescription = "Income",
-                                    tint = Color(0xFF81C784),
+                                    tint = if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -177,14 +181,14 @@ fun AccountsScreen(
                                 )
                                 Text(
                                     text = formatCurrency(animIncome.toDouble(), currencySymbol),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.ExtraBold),
-                                    color = Color(0xFF81C784)
+                                    style = if (isDiary) MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.ExtraBold),
+                                    color = if (isDiary) Color(0xFF2E7D32) else Color(0xFF81C784)
                                 )
                             }
                         }
 
                         VerticalDivider(
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f),
+                            color = if (isDiary) Color(0xFFD4E3FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f),
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
 
@@ -198,13 +202,13 @@ fun AccountsScreen(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFFFEBEE).copy(alpha = 0.9f)),
+                                    .background(if (isDiary) Color(0xFFFFFDE7) else Color(0xFFFFEBEE).copy(alpha = 0.9f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.ArrowDownward,
                                     contentDescription = "Expense",
-                                    tint = Color(0xFFFF7575),
+                                    tint = if (isDiary) Color(0xFFC62828) else Color(0xFFFF7575),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -216,8 +220,8 @@ fun AccountsScreen(
                                 )
                                 Text(
                                     text = formatCurrency(animExpense.toDouble(), currencySymbol),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.ExtraBold),
-                                    color = Color(0xFFFF7575)
+                                    style = if (isDiary) MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.ExtraBold),
+                                    color = if (isDiary) Color(0xFFC62828) else Color(0xFFFF7575)
                                 )
                             }
                         }
@@ -226,7 +230,7 @@ fun AccountsScreen(
             }
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 1.dp)
+        HorizontalDivider(color = if (isDiary) Color(0xFFD4E3FC) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 1.dp)
 
         // ACCOUNT CARDS LIST
         if (accounts.isEmpty()) {
@@ -247,6 +251,7 @@ fun AccountsScreen(
                         AccountListItem(
                             account = account,
                             currency = currencySymbol,
+                            isDiary = isDiary,
                             onClick = { onEditAccount(account) }
                         )
                     }
@@ -456,6 +461,7 @@ fun AccountsScreen(
 fun AccountListItem(
     account: Account,
     currency: String,
+    isDiary: Boolean = false,
     onClick: () -> Unit
 ) {
     val accountColor = try { Color(android.graphics.Color.parseColor(account.color)) } catch (e: Exception) { Color.Gray }
@@ -464,11 +470,11 @@ fun AccountListItem(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isDiary) Color(0xFFF9FBE7) else MaterialTheme.colorScheme.surface
         ),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = if (isDiary) RoundedCornerShape(20.dp) else RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, if (isDiary) Color(0xFFD4C3A3) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp)
     ) {
         Row(
             modifier = Modifier

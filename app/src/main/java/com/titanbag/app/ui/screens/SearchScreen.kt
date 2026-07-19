@@ -164,7 +164,14 @@ fun SearchScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                                         if (localQuery.isEmpty()) {
-                                            Text("Search note, category, account...", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                            Text(
+                                                text = "Search note, category, account...", 
+                                                style = MaterialTheme.typography.bodyLarge, 
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                softWrap = false
+                                            )
                                         }
                                         innerTextField()
                                     }

@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.titanbag.app.data.DebtRecord
 import com.titanbag.app.data.TitanBagViewModel
+import com.titanbag.app.ui.theme.LocalVisualStyle
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -53,6 +54,9 @@ fun DebtListScreen(
             else -> debtRecords
         }
     }
+
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
 
     Scaffold(
         topBar = {
@@ -93,30 +97,32 @@ fun DebtListScreen(
             ) {
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)), // Light Green
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = if (isDiary) Color(0xFFF1F8E9) else Color(0xFFE8F5E9)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = if (isDiary) BorderStroke(1.dp, Color(0xFFD4C3A3)) else null
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("Owed to Me", style = MaterialTheme.typography.labelMedium, color = Color(0xFF2E7D32))
-                        Text("₹${formatAmountWithCommas(totalOwedToMe)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                        Text("₹${formatAmountWithCommas(totalOwedToMe)}", style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
                     }
                 }
 
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)), // Light Red
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = if (isDiary) Color(0xFFFFFDE7) else Color(0xFFFFEBEE)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = if (isDiary) BorderStroke(1.dp, Color(0xFFD4C3A3)) else null
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("I Owe Others", style = MaterialTheme.typography.labelMedium, color = Color(0xFFC62828))
-                        Text("₹${formatAmountWithCommas(totalIOwe)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                        Text("₹${formatAmountWithCommas(totalIOwe)}", style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color(0xFFC62828))
                     }
                 }
             }
 
             // Tab Filter
             Row(
-                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp)).padding(4.dp),
+                modifier = Modifier.fillMaxWidth().background(if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp)).padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 listOf("All", "Pending", "Completed").forEach { tab ->
@@ -166,6 +172,7 @@ fun DebtListScreen(
                         DebtRecordRow(
                             record = record,
                             isExpanded = isExpanded,
+                            isDiary = isDiary,
                             onToggleExpand = { expandedRecordId = if (isExpanded) null else record.id },
                             onMarkCompleted = { returnedDate ->
                                 viewModel.updateDebtRecordLocal(
@@ -203,6 +210,7 @@ fun DebtListScreen(
 fun DebtRecordRow(
     record: DebtRecord,
     isExpanded: Boolean,
+    isDiary: Boolean = false,
     onToggleExpand: () -> Unit,
     onMarkCompleted: (String) -> Unit,
     onDelete: () -> Unit
@@ -216,13 +224,15 @@ fun DebtRecordRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onToggleExpand() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = if (isDiary) RoundedCornerShape(20.dp) else RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isDiary) Color(0xFFF9FBE7) else MaterialTheme.colorScheme.surface),
         border = BorderStroke(
             1.dp,
             if (isExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+            else if (isDiary) Color(0xFFD4C3A3)
             else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -435,7 +445,7 @@ fun AddDebtRecordDialog(
     var action by remember { mutableStateOf("Debt") } // "Debt" or "Credit"
     var modeOfTransaction by remember { mutableStateOf("Cash") } // "Cash", "Card", "UPI", "Bank Transfer"
     
-    val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     var borrowedDate by remember { mutableStateOf(today) }
 
     var isReminderEnabled by remember { mutableStateOf(false) }

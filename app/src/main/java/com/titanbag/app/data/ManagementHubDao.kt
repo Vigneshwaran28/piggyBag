@@ -11,7 +11,17 @@ data class GroupExpenseWithMember(
     val description: String,
     val expenseDate: String,
     val createdAt: String,
-    val memberName: String
+    val memberName: String,
+    val category: String = "",
+    val subcategory: String = "",
+    val receipt: String = "",
+    val location: String = "",
+    val paymentMethod: String = "",
+    val lastModified: String = "",
+    val tags: String = "",
+    val participantsIncluded: String = "",
+    val splitType: String = "Equal",
+    val shares: String = ""
 )
 
 @Dao
@@ -155,4 +165,28 @@ interface DebtRecordDao {
 
     @Query("UPDATE debt_records SET userId = :newUserId WHERE userId = :oldUserId")
     suspend fun updateUserId(oldUserId: String, newUserId: String)
+}
+
+@Dao
+interface GroupSettlementDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSettlement(settlement: GroupSettlement)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSettlements(settlements: List<GroupSettlement>)
+
+    @Update
+    suspend fun updateSettlement(settlement: GroupSettlement)
+
+    @Delete
+    suspend fun deleteSettlement(settlement: GroupSettlement)
+
+    @Query("SELECT * FROM group_settlements WHERE groupId = :groupId")
+    fun getSettlementsForGroupFlow(groupId: String): Flow<List<GroupSettlement>>
+
+    @Query("SELECT * FROM group_settlements WHERE groupId = :groupId")
+    suspend fun getSettlementsForGroupDirect(groupId: String): List<GroupSettlement>
+
+    @Query("DELETE FROM group_settlements WHERE groupId = :groupId")
+    suspend fun deleteSettlementsForGroup(groupId: String)
 }

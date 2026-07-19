@@ -79,7 +79,8 @@ data class PartnerDto(
 
 data class AuthResponse(
     val token: String,
-    val user: UserDto
+    val user: UserDto,
+    @SerializedName("is_new") val isNew: Boolean? = false
 )
 
 data class ProfileResponse(
@@ -319,4 +320,8 @@ data class CategoryRequest(
     val icon: String? = null,
     val color: String? = null,
     @SerializedName("order_index") val orderIndex: Int = 0
+)
+
+data class SetPasswordRequest(
+    val password: String
 )

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -63,7 +65,7 @@ fun GroupExpenseSplitScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Group Expense Split", fontWeight = FontWeight.Bold) },
+                    title = { Text("Group Settlements Hub", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -89,39 +91,70 @@ fun GroupExpenseSplitScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Intro text and Hint message card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                val currentUserId by viewModel.currentUserId.collectAsState()
+                val isLoggedIn = currentUserId != "default_user"
+
+                if (!isLoggedIn) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Info,
+                                contentDescription = "Info",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Group creation is not allowed. You can only join existing groups using a 6-digit PIN.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showJoinGroupDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Rounded.GroupAdd, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Join Group")
+                    }
+                } else {
                     Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = "Info",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Group creation is not allowed. You can only join existing groups using a 6-digit PIN.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
+                        Button(
+                            onClick = { showJoinGroupDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                        ) {
+                            Icon(Icons.Rounded.GroupAdd, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Join Group")
+                        }
 
-                Button(
-                    onClick = { showJoinGroupDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Rounded.GroupAdd, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Join Group")
+                        Button(
+                            onClick = { showCreateGroupDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Create Group")
+                        }
+                    }
                 }
 
                 Text(
@@ -175,11 +208,21 @@ fun GroupExpenseSplitScreen(
                                     Spacer(modifier = Modifier.width(16.dp))
 
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            group.title,
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                group.title,
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Badge(containerColor = when(group.status) {
+                                                "Completed" -> Color(0xFFCAFFBF)
+                                                "Archived" -> Color.LightGray
+                                                else -> MaterialTheme.colorScheme.primaryContainer
+                                            }) {
+                                                Text(group.status, fontSize = 9.sp)
+                                            }
+                                        }
                                         Text(
                                             "PIN: ${group.groupPin} • ${membersFlow.size} members",
                                             style = MaterialTheme.typography.bodySmall,
@@ -204,22 +247,51 @@ fun GroupExpenseSplitScreen(
     // Dialog: Create Group
     if (showCreateGroupDialog) {
         var groupTitle by remember { mutableStateOf("") }
+        var description by remember { mutableStateOf("") }
+        var destination by remember { mutableStateOf("") }
+        var budgetStr by remember { mutableStateOf("") }
+
         AlertDialog(
             onDismissRequest = { showCreateGroupDialog = false },
             title = { Text("Create Expense Group") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
                     Text(
-                        "Enter a title for your vacation or trip. A unique join PIN will be generated.",
+                        "Enter a title and configuration for your group event.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
                     OutlinedTextField(
                         value = groupTitle,
                         onValueChange = { groupTitle = it },
-                        label = { Text("Group Title") },
+                        label = { Text("Group Title *") },
                         placeholder = { Text("e.g. Goa Trip") },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = destination,
+                        onValueChange = { destination = it },
+                        label = { Text("Destination") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = budgetStr,
+                        onValueChange = { budgetStr = it },
+                        label = { Text("Budget") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -229,7 +301,13 @@ fun GroupExpenseSplitScreen(
                 Button(
                     onClick = {
                         if (groupTitle.isNotBlank()) {
-                            viewModel.createGroupLocal(groupTitle) { success, pin ->
+                            val budget = budgetStr.toDoubleOrNull() ?: 0.0
+                            viewModel.createGroupLocal(
+                                title = groupTitle,
+                                description = description,
+                                destination = destination,
+                                budget = budget
+                            ) { success, pin ->
                                 if (success) {
                                     Toast.makeText(context, "Group created with PIN $pin", Toast.LENGTH_LONG).show()
                                     showCreateGroupDialog = false
@@ -319,6 +397,8 @@ fun GroupDashboardScreen(
     
     var showAddExpenseDialog by remember { mutableStateOf(false) }
     var expenseToEdit by remember { mutableStateOf<GroupExpenseWithMember?>(null) }
+    
+    val groupSettlements by viewModel.getSettlementsForGroupFlow(group.id).collectAsState(initial = emptyList())
 
     // Computations
     val totalExpense = expenses.sumOf { it.amount }
@@ -326,9 +406,21 @@ fun GroupDashboardScreen(
     val myExpense = expenses.filter { it.userId == activeUserId }.sumOf { it.amount }
 
     // Settlement Optimization
-    // Map expenses with member names to regular GroupExpenses
-    val plainExpenses = expenses.map { GroupExpense(it.id, it.groupId, it.userId, it.amount, it.description, it.expenseDate, it.createdAt) }
-    val settlements = remember(members, expenses) {
+    val plainExpenses = expenses.map { 
+        GroupExpense(
+            id = it.id, 
+            groupId = it.groupId, 
+            userId = it.userId, 
+            amount = it.amount, 
+            description = it.description, 
+            expenseDate = it.expenseDate, 
+            createdAt = it.createdAt,
+            participantsIncluded = it.participantsIncluded,
+            splitType = it.splitType,
+            shares = it.shares
+        ) 
+    }
+    val calculatedSettlements = remember(members, expenses) {
         viewModel.calculateGroupSettlements(members, plainExpenses)
     }
 
@@ -338,24 +430,56 @@ fun GroupDashboardScreen(
                 title = {
                     Column {
                         Text(group.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                        Text("Group PIN: ${group.groupPin}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text("Group PIN: ${group.groupPin} • ${group.status}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.outlineColor())
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    if (group.status == "Running") {
+                        Button(
+                            onClick = {
+                                viewModel.finalizeGroup(group.id, members, plainExpenses)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCAFFBF), contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Finalize")
+                        }
+                    } else if (group.status == "Completed") {
+                        TextButton(
+                            onClick = {
+                                viewModel.reopenGroup(group.id)
+                            }
+                        ) {
+                            Text("Reopen")
+                        }
+                        
+                        Button(
+                            onClick = {
+                                viewModel.archiveGroup(group.id)
+                            },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Archive")
+                        }
+                    }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddExpenseDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Add Expense")
+            if (group.status == "Running") {
+                FloatingActionButton(
+                    onClick = { showAddExpenseDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Add Expense")
+                }
             }
         }
     ) { innerPadding ->
@@ -394,7 +518,7 @@ fun GroupDashboardScreen(
                 }
             }
 
-            // Group Members Summary Spent
+            // Members Summary
             Text("Members Summary", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -427,37 +551,88 @@ fun GroupDashboardScreen(
             }
 
             // Settlement Section
-            Text("Settlement optimization", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (settlements.isEmpty()) {
-                        Text(
-                            "Everyone is settled! No transactions needed.",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.outline,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else {
-                        settlements.forEach { payment ->
-                            Row(
+            if (group.status == "Completed") {
+                Text("Finalized Settlements Payments", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF007700))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (groupSettlements.isEmpty()) {
+                            Text(
+                                "Everyone is settled! No payments generated.",
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Text(payment.fromName, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Icon(Icons.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(payment.toName, fontWeight = FontWeight.Bold)
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            groupSettlements.forEach { payment ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Text(payment.fromUserName, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(Icons.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(payment.toUserName, fontWeight = FontWeight.Bold)
+                                    }
+                                    
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("₹${String.format(Locale.getDefault(), "%.2f", payment.amount)}", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                                        
+                                        val isPaid = payment.status == "Paid"
+                                        Checkbox(
+                                            checked = isPaid,
+                                            onCheckedChange = { checked ->
+                                                viewModel.updateGroupSettlementStatus(payment.id, if (checked) "Paid" else "Pending")
+                                            }
+                                        )
+                                        Text(if (isPaid) "Paid" else "Pending", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
-                                Text("₹${String.format(Locale.getDefault(), "%.2f", payment.amount)}", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Settlement Optimization (Preview)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (calculatedSettlements.isEmpty()) {
+                            Text(
+                                "Everyone is settled! No transactions needed.",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            calculatedSettlements.forEach { payment ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Text(payment.fromName, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(Icons.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(payment.toName, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text("₹${String.format(Locale.getDefault(), "%.2f", payment.amount)}", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
@@ -492,7 +667,7 @@ fun GroupDashboardScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(exp.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                    Text("Paid by: ${exp.memberName} • ${exp.expenseDate.substringBefore("T")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                    Text("Paid by: ${exp.memberName} • Split: ${exp.splitType} • ${exp.expenseDate.substringBefore("T")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                                 }
 
                                 Row(
@@ -501,7 +676,7 @@ fun GroupDashboardScreen(
                                 ) {
                                     Text("₹${exp.amount.toInt()}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
 
-                                    if (isMine) {
+                                    if (isMine && group.status == "Running") {
                                         IconButton(onClick = { expenseToEdit = exp }, modifier = Modifier.size(32.dp)) {
                                             Icon(Icons.Rounded.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                         }
@@ -527,9 +702,18 @@ fun GroupDashboardScreen(
     if (showAddExpenseDialog) {
         AddEditGroupExpenseDialog(
             groupId = group.id,
+            members = members,
             onDismiss = { showAddExpenseDialog = false },
-            onConfirm = { amount, desc, date ->
-                viewModel.addGroupExpenseLocal(group.id, amount, desc, date)
+            onConfirm = { amount, desc, date, splitType, participants, shares ->
+                viewModel.addGroupExpenseLocal(
+                    groupId = group.id,
+                    amount = amount,
+                    description = desc,
+                    dateStr = date,
+                    splitType = splitType,
+                    participantsIncluded = participants,
+                    shares = shares
+                )
                 showAddExpenseDialog = false
             }
         )
@@ -540,10 +724,24 @@ fun GroupDashboardScreen(
         val exp = expenseToEdit!!
         AddEditGroupExpenseDialog(
             groupId = group.id,
+            members = members,
             existingExpense = exp,
             onDismiss = { expenseToEdit = null },
-            onConfirm = { amount, desc, date ->
-                viewModel.updateGroupExpenseLocal(GroupExpense(exp.id, exp.groupId, exp.userId, amount, desc, date, exp.createdAt))
+            onConfirm = { amount, desc, date, splitType, participants, shares ->
+                viewModel.updateGroupExpenseLocal(
+                    GroupExpense(
+                        id = exp.id,
+                        groupId = exp.groupId,
+                        userId = exp.userId,
+                        amount = amount,
+                        description = desc,
+                        expenseDate = date,
+                        createdAt = exp.createdAt,
+                        splitType = splitType,
+                        participantsIncluded = participants,
+                        shares = shares
+                    )
+                )
                 expenseToEdit = null
             }
         )
@@ -554,9 +752,10 @@ fun GroupDashboardScreen(
 @Composable
 fun AddEditGroupExpenseDialog(
     groupId: String,
+    members: List<GroupMember>,
     existingExpense: GroupExpenseWithMember? = null,
     onDismiss: () -> Unit,
-    onConfirm: (Double, String, String) -> Unit
+    onConfirm: (Double, String, String, String, String, String) -> Unit
 ) {
     val context = LocalContext.current
     var amount by remember { mutableStateOf(existingExpense?.amount?.toInt()?.toString() ?: "") }
@@ -565,33 +764,52 @@ fun AddEditGroupExpenseDialog(
     val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     var dateStr by remember { mutableStateOf(existingExpense?.expenseDate?.substringBefore("T") ?: todayStr) }
 
-    val calendar = Calendar.getInstance()
-    val datePickerDialog = DatePickerDialog(
-        context,
-        { _, year, month, dayOfMonth ->
-            val cal = Calendar.getInstance().apply {
-                set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month)
-                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+    // Advanced Splits State
+    val splitTypes = listOf("Equal", "Percentage", "Custom Amount", "Shares", "Only Selected Members")
+    var selectedSplitType by remember { mutableStateOf(existingExpense?.splitType ?: "Equal") }
+    
+    // Checked status list for each member
+    val checkedMembers = remember { mutableStateMapOf<String, Boolean>() }
+    // Split input values (percentages, custom amounts, shares) for each member
+    val splitValues = remember { mutableStateMapOf<String, String>() }
+
+    // Init state values
+    LaunchedEffect(existingExpense, members) {
+        members.forEach { m ->
+            checkedMembers[m.userId] = true
+            splitValues[m.userId] = ""
+        }
+        
+        if (existingExpense != null) {
+            val incl = existingExpense.participantsIncluded.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            if (incl.isNotEmpty()) {
+                members.forEach { m ->
+                    checkedMembers[m.userId] = incl.contains(m.userId)
+                }
             }
-            dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
-        },
-        calendar.get(Calendar.YEAR),
-        calendar.get(Calendar.MONTH),
-        calendar.get(Calendar.DAY_OF_MONTH)
-    )
+            
+            val shValues = existingExpense.shares.split(",").map { it.trim() }
+            if (incl.isNotEmpty() && shValues.size == incl.size) {
+                incl.forEachIndexed { idx, pId ->
+                    splitValues[pId] = shValues.getOrNull(idx) ?: ""
+                }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existingExpense == null) "Add Expense" else "Edit Expense") },
+        title = { Text(if (existingExpense == null) "Add Shared Expense" else "Edit Shared Expense") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 OutlinedTextField(
                     value = amount,
-                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount (₹)") },
+                    onValueChange = { amount = it },
+                    label = { Text("Amount (₹) *") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -599,41 +817,165 @@ fun AddEditGroupExpenseDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") },
-                    placeholder = { Text("e.g. Taxi / Lunch") },
-                    singleLine = true,
+                    label = { Text("Description *") },
+                    placeholder = { Text("e.g. Dinner split") },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = dateStr,
-                    onValueChange = { },
-                    label = { Text("Date") },
+                    onValueChange = {},
                     readOnly = true,
-                    shape = RoundedCornerShape(12.dp),
-                    trailingIcon = {
-                        IconButton(onClick = { datePickerDialog.show() }) {
-                            Icon(Icons.Rounded.CalendarMonth, contentDescription = "Select Date")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Date") },
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        val calendar = Calendar.getInstance()
+                        DatePickerDialog(context, { _, y, m, d ->
+                            dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
+                        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+                    }
                 )
+
+                // Split type dropdown
+                var splitMenuExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = splitMenuExpanded,
+                    onExpandedChange = { splitMenuExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedSplitType,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Split Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = splitMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = splitMenuExpanded,
+                        onDismissRequest = { splitMenuExpanded = false }
+                    ) {
+                        splitTypes.forEach { type ->
+                            DropdownMenuItem(
+                                text = { Text(type) },
+                                onClick = {
+                                    selectedSplitType = type
+                                    splitMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Listing inputs for members
+                Text("Split Details Configuration", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                
+                members.forEach { member ->
+                    val isChecked = checkedMembers[member.userId] ?: true
+                    val currentVal = splitValues[member.userId] ?: ""
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    checkedMembers[member.userId] = checked
+                                }
+                            )
+                            Text(member.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+
+                        if (isChecked && selectedSplitType in listOf("Percentage", "Custom Amount", "Shares")) {
+                            OutlinedTextField(
+                                value = currentVal,
+                                onValueChange = { splitValues[member.userId] = it },
+                                label = {
+                                    Text(when(selectedSplitType) {
+                                        "Percentage" -> "%"
+                                        "Custom Amount" -> "₹"
+                                        else -> "Shares"
+                                    })
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.width(90.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val amountVal = amount.toDoubleOrNull()
-                    if (amountVal != null && amountVal > 0 && description.isNotBlank()) {
-                        onConfirm(amountVal, description, dateStr)
-                    } else {
-                        Toast.makeText(context, "Please enter valid fields", Toast.LENGTH_SHORT).show()
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (amt <= 0.0 || description.isBlank()) {
+                        Toast.makeText(context, "Please fill out amount and description", Toast.LENGTH_SHORT).show()
+                        return@Button
                     }
+
+                    // Build participants list
+                    val selectedList = members.filter { checkedMembers[it.userId] == true }
+                    if (selectedList.isEmpty()) {
+                        Toast.makeText(context, "Please select at least 1 participant", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    val participantsStr = selectedList.joinToString(",") { it.userId }
+
+                    // Validate custom values and build shares string
+                    val sharesList = mutableListOf<String>()
+                    var validationError: String? = null
+
+                    when (selectedSplitType) {
+                        "Percentage" -> {
+                            var sum = 0.0
+                            selectedList.forEach { m ->
+                                val pct = splitValues[m.userId]?.toDoubleOrNull() ?: 0.0
+                                sum += pct
+                                sharesList.add(pct.toString())
+                            }
+                            if (Math.abs(sum - 100.0) > 0.1) {
+                                validationError = "Percentages must sum to exactly 100% (Current sum: $sum%)"
+                            }
+                        }
+                        "Custom Amount" -> {
+                            var sum = 0.0
+                            selectedList.forEach { m ->
+                                val valAmt = splitValues[m.userId]?.toDoubleOrNull() ?: 0.0
+                                sum += valAmt
+                                sharesList.add(valAmt.toString())
+                            }
+                            if (Math.abs(sum - amt) > 0.1) {
+                                validationError = "Custom amounts must sum to the total expense amount ₹$amt (Current sum: ₹$sum)"
+                            }
+                        }
+                        "Shares" -> {
+                            selectedList.forEach { m ->
+                                val sh = splitValues[m.userId]?.toDoubleOrNull() ?: 1.0
+                                sharesList.add(sh.toString())
+                            }
+                        }
+                        else -> {
+                            // Equal or Selected Members does not need individual share values saved
+                        }
+                    }
+
+                    if (validationError != null) {
+                        Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+
+                    val sharesStr = sharesList.joinToString(",")
+
+                    onConfirm(amt, description, dateStr, selectedSplitType, participantsStr, sharesStr)
                 },
+                enabled = amount.isNotBlank() && description.isNotBlank(),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(if (existingExpense == null) "Add" else "Save")
+                Text("Confirm")
             }
         },
         dismissButton = {
@@ -643,3 +985,6 @@ fun AddEditGroupExpenseDialog(
         }
     )
 }
+
+@Composable
+fun MaterialTheme.outlineColor() = MaterialTheme.colorScheme.outline

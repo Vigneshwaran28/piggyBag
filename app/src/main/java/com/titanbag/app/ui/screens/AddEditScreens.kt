@@ -2,6 +2,7 @@ package com.titanbag.app.ui.screens
 
 import android.app.DatePickerDialog
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -45,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import com.titanbag.app.ui.theme.spacing
-import com.titanbag.app.ui.theme.GoogleSansFlexFontFamily
+import com.titanbag.app.ui.theme.IBMPlexSansFontFamily
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
@@ -128,7 +129,7 @@ private fun evaluateMathExpression(str: String): Double {
                 } else if (eat('/'.code)) {
                     var y = parseFactor()
                     if (eat('%'.code)) y /= 100.0
-                    if (y == 0.0) throw ArithmeticException("Division by zero")
+                    if (y == 0.0) return Double.NaN
                     x /= y
                 } else if (ch >= '0'.code && ch <= '9'.code || ch == '('.code) {
                     var y = parseFactor()
@@ -166,6 +167,9 @@ private fun evaluateMathExpression(str: String): Double {
 fun TransactionForm(
     viewModel: TitanBagViewModel,
     transactionToEdit: TransactionWithDetails? = null,
+    initialVehicleId: Int? = null,
+    initialCategoryId: Int? = null,
+    initialSubcategoryId: Int? = null,
     onNavigateToAddCategory: () -> Unit = {},
     onNavigateToAddAccount: () -> Unit = {},
     onDismiss: () -> Unit
@@ -176,6 +180,11 @@ fun TransactionForm(
     val accounts by viewModel.allAccounts.collectAsState()
     val categories by viewModel.allCategories.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val lifeAreas by viewModel.allLifeAreas.collectAsState()
+    val subcategories by viewModel.allSubcategories.collectAsState()
+    val purposes by viewModel.allPurposes.collectAsState()
+    val vehicles by viewModel.allVehicles.collectAsState()
+
     val currencySymbol = settings?.currency ?: "₹"
     val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
     val isDarkAppTheme = when (settings?.themeMode) {
@@ -220,8 +229,20 @@ fun TransactionForm(
         mutableStateOf(transactionToEdit?.accountId ?: 0)
     }
     var selectedCategoryId by remember(transactionToEdit) {
-        mutableStateOf(transactionToEdit?.categoryId ?: 0)
+        mutableStateOf(transactionToEdit?.categoryId ?: initialCategoryId ?: 0)
     }
+
+    // --- Smart Life Finance additions states ---
+    var selectedLifeAreaId by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.lifeAreaId) }
+    var selectedSubcategoryId by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.subcategoryId ?: initialSubcategoryId) }
+    var selectedPurposeId by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.purposeId) }
+    var paidBy by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.paidBy ?: "Me") }
+    var spentFor by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.spentFor ?: "Me") }
+    var peopleTagged by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.peopleTagged ?: "") }
+    var selectedVehicleId by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.vehicleId ?: initialVehicleId) }
+    var odometerStr by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.odometer?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "") }
+    var fuelQtyStr by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.fuelQuantity?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "") }
+    var studentName by remember(transactionToEdit) { mutableStateOf(transactionToEdit?.studentName ?: "") }
 
     LaunchedEffect(selectedAccountId, selectedCategoryId) {
         amountError = null
@@ -248,6 +269,27 @@ fun TransactionForm(
     LaunchedEffect(isExpense, categories) {
         if (transactionToEdit == null || transactionToEdit.type != (if (isExpense) "expense" else "income")) {
             selectedCategoryId = 0
+            selectedSubcategoryId = null
+            selectedPurposeId = null
+        }
+    }
+
+    // Filter subcategories and purposes
+    val filteredSubcategories = subcategories.filter { it.categoryId == selectedCategoryId }
+    val filteredPurposes = purposes.filter { it.subcategoryId == selectedSubcategoryId }
+
+    // Reset subcategory and purpose when category changes
+    LaunchedEffect(selectedCategoryId) {
+        if (transactionToEdit == null || transactionToEdit.categoryId != selectedCategoryId) {
+            selectedSubcategoryId = null
+            selectedPurposeId = null
+        }
+    }
+
+    // Reset purpose when subcategory changes
+    LaunchedEffect(selectedSubcategoryId) {
+        if (transactionToEdit == null || transactionToEdit.subcategoryId != selectedSubcategoryId) {
+            selectedPurposeId = null
         }
     }
 
@@ -467,7 +509,7 @@ fun TransactionForm(
                             try {
                                 val mathExpr = amountTextFieldValue.text.replace("×", "*").replace("x", "*").replace("÷", "/").replace("−", "-")
                                 if (mathExpr.isNotEmpty() && (mathExpr.contains("+") || mathExpr.contains("-") || mathExpr.contains("*") || mathExpr.contains("/"))) {
-                                    val res = evaluateMathExpression(mathExpr)
+                                    val res = try { evaluateMathExpression(mathExpr) } catch(e: Throwable) { Double.NaN }
                                     if (!res.isNaN() && !res.isInfinite()) {
                                         val finalStr = if (res % 1 == 0.0) res.toInt().toString() else String.format(Locale.US, "%.2f", res)
                                         amountTextFieldValue = TextFieldValue(text = finalStr, selection = TextRange(finalStr.length))
@@ -525,7 +567,17 @@ fun TransactionForm(
                                     accountId = selectedAccountId,
                                     note = finalNote,
                                     dateStr = finalDateStr,
-                                    tags = tagsString
+                                    tags = tagsString,
+                                    lifeAreaId = selectedLifeAreaId,
+                                    subcategoryId = selectedSubcategoryId,
+                                    purposeId = selectedPurposeId,
+                                    paidBy = paidBy,
+                                    spentFor = spentFor,
+                                    peopleTagged = peopleTagged,
+                                    vehicleId = selectedVehicleId,
+                                    odometer = odometerStr.toDoubleOrNull(),
+                                    fuelQuantity = fuelQtyStr.toDoubleOrNull(),
+                                    studentName = studentName
                                 )
                             } else {
                                 viewModel.updateTransaction(
@@ -536,7 +588,17 @@ fun TransactionForm(
                                     accountId = selectedAccountId,
                                     note = finalNote,
                                     dateStr = finalDateStr,
-                                    tags = tagsString
+                                    tags = tagsString,
+                                    lifeAreaId = selectedLifeAreaId,
+                                    subcategoryId = selectedSubcategoryId,
+                                    purposeId = selectedPurposeId,
+                                    paidBy = paidBy,
+                                    spentFor = spentFor,
+                                    peopleTagged = peopleTagged,
+                                    vehicleId = selectedVehicleId,
+                                    odometer = odometerStr.toDoubleOrNull(),
+                                    fuelQuantity = fuelQtyStr.toDoubleOrNull(),
+                                    studentName = studentName
                                 )
                             }
                             onDismiss()
@@ -737,8 +799,8 @@ fun TransactionForm(
                             ) {
                                 if (selectedCategory != null) {
                                     IconMapper.CategoryIcon(
-                                        icon = selectedCategory!!.icon,
-                                        categoryName = selectedCategory!!.name,
+                                        icon = selectedCategory.icon,
+                                        categoryName = selectedCategory.name,
                                         tint = Color.Black,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -762,7 +824,7 @@ fun TransactionForm(
                     }
                 }
 
-                // Date // Date // DATE & TIME ROW (Moved up for cleaner visual layout) Time Time
+                // Date & Time selectors
                 val displayDate = remember(selectedDate) {
                     try {
                         val sdfInput = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -791,7 +853,6 @@ fun TransactionForm(
                     }
                 }
 
-                // Date // Date // DATE & TIME ROW (Moved up for cleaner visual layout) Time Time
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1022,7 +1083,7 @@ fun TransactionForm(
                         text = currencySymbol,
                         style = MaterialTheme.typography.displaySmall.copy(
                             fontWeight = FontWeight.Medium,
-                            fontFamily = GoogleSansFlexFontFamily,
+                            fontFamily = IBMPlexSansFontFamily,
                             fontSize = 38.sp
                         ),
                         color = if (isDarkAppTheme) Color.White else Color.Black,
@@ -1051,7 +1112,7 @@ fun TransactionForm(
                             text = textStr,
                             style = MaterialTheme.typography.displaySmall.copy(
                                 fontWeight = FontWeight.Medium,
-                                fontFamily = GoogleSansFlexFontFamily,
+                                fontFamily = IBMPlexSansFontFamily,
                                 fontSize = 38.sp
                             ),
                             color = MaterialTheme.colorScheme.onSurface,
@@ -1165,7 +1226,7 @@ fun TransactionForm(
                                             text = key,
                                             style = MaterialTheme.typography.headlineMedium.copy(
                                                 fontWeight = FontWeight.Normal,
-                                                fontFamily = GoogleSansFlexFontFamily,
+                                                fontFamily = IBMPlexSansFontFamily,
                                                 fontSize = 32.sp
                                             ),
                                             color = if (isEqual) {
@@ -1507,16 +1568,29 @@ fun AccountForm(
                         val accountName = name
                         
                         if (accountToEdit == null) {
-                            viewModel.insertAccount(accountName, type, openingBal, selectedColor, selectedIcon)
-                            coroutineScope.launch { localSnackbarHostState.showSnackbar("Account Saved") }
+                            viewModel.insertAccount(accountName, type, openingBal, selectedColor, selectedIcon,
+                                onSuccess = {
+                                    coroutineScope.launch { localSnackbarHostState.showSnackbar("Account Saved") }
+                                    onDismiss()
+                                },
+                                onFailure = { errorMsg ->
+                                    coroutineScope.launch { localSnackbarHostState.showSnackbar(errorMsg) }
+                                }
+                            )
                         } else {
                             // Keep balance math
                             val diff = openingBal - accountToEdit.openingBalance
                             val updatedCurrent = accountToEdit.currentBalance + diff
-                            viewModel.updateAccount(accountToEdit.id, accountName, type, openingBal, updatedCurrent, selectedColor, selectedIcon)
-                            coroutineScope.launch { localSnackbarHostState.showSnackbar("Account Updated") }
+                            viewModel.updateAccount(accountToEdit.id, accountName, type, openingBal, updatedCurrent, selectedColor, selectedIcon,
+                                onSuccess = {
+                                    coroutineScope.launch { localSnackbarHostState.showSnackbar("Account Updated") }
+                                    onDismiss()
+                                },
+                                onFailure = { errorMsg ->
+                                    coroutineScope.launch { localSnackbarHostState.showSnackbar(errorMsg) }
+                                }
+                            )
                         }
-                        onDismiss()
                     },
                     contentAlignment = Alignment.Center
                 ) {
@@ -2339,7 +2413,7 @@ fun BudgetForm(
                             var finalStartDate = startDate
                             var finalEndDate = endDate
                             
-                            val budgetTypeEnum = budgetType.uppercase(java.util.Locale.ROOT)
+                            val budgetTypeEnum = budgetType.uppercase(java.util.Locale.ROOT).replace(" ", "_")
                             if (budgetTypeEnum == "WEEKLY") {
                                 val cal = java.util.Calendar.getInstance()
                                 cal.set(java.util.Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
@@ -2353,6 +2427,32 @@ fun BudgetForm(
                                 cal.set(java.util.Calendar.MINUTE, 59)
                                 cal.set(java.util.Calendar.SECOND, 59)
                                 finalEndDate = cal.timeInMillis
+                            } else if (budgetTypeEnum == "15_DAYS") {
+                                val cal = java.util.Calendar.getInstance()
+                                val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+                                if (day <= 15) {
+                                    cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                    cal.set(java.util.Calendar.MINUTE, 0)
+                                    cal.set(java.util.Calendar.SECOND, 0)
+                                    finalStartDate = cal.timeInMillis
+                                    cal.set(java.util.Calendar.DAY_OF_MONTH, 15)
+                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                                    cal.set(java.util.Calendar.MINUTE, 59)
+                                    cal.set(java.util.Calendar.SECOND, 59)
+                                    finalEndDate = cal.timeInMillis
+                                } else {
+                                    cal.set(java.util.Calendar.DAY_OF_MONTH, 16)
+                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                    cal.set(java.util.Calendar.MINUTE, 0)
+                                    cal.set(java.util.Calendar.SECOND, 0)
+                                    finalStartDate = cal.timeInMillis
+                                    cal.set(java.util.Calendar.DAY_OF_MONTH, cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH))
+                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                                    cal.set(java.util.Calendar.MINUTE, 59)
+                                    cal.set(java.util.Calendar.SECOND, 59)
+                                    finalEndDate = cal.timeInMillis
+                                }
                             } else if (budgetTypeEnum == "MONTHLY") {
                                 val cal = java.util.Calendar.getInstance()
                                 cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
@@ -2587,9 +2687,9 @@ fun BudgetForm(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    listOf("Monthly", "Custom").forEach { period ->
+                    listOf("Weekly", "15 Days", "Monthly", "Custom").forEach { period ->
                         val isSelected = budgetType == period
                         val borderModifier = if (isSelected) {
                             Modifier
@@ -2620,8 +2720,11 @@ fun BudgetForm(
                         ) {
                             Text(
                                 text = period,
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Visible
                             )
                         }
                     }
@@ -2632,7 +2735,10 @@ fun BudgetForm(
                     Text(
                         text = "${sdf.format(java.util.Date(startDate!!))} - ${sdf.format(java.util.Date(endDate!!))}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Visible
                     )
                 }
             }
@@ -3000,8 +3106,22 @@ fun RecurringTransactionForm(
     var selectedAccountId by remember { mutableStateOf(0) }
     var selectedCategoryId by remember { mutableStateOf(0) }
 
+    var endConditionType by remember { mutableStateOf("never") } // never, date, count
+    var endConditionDate by remember {
+        mutableStateOf(
+            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        )
+    }
+    var endConditionCount by remember { mutableStateOf("10") }
+
     val frequencies = listOf("daily", "weekly", "monthly", "yearly")
     val filteredCategories = categories.filter { it.type == (if (isExpense) "expense" else "income") }
+
+    LaunchedEffect(accounts) {
+        if (selectedAccountId == 0 && accounts.isNotEmpty()) {
+            selectedAccountId = accounts.first().id
+        }
+    }
 
     LaunchedEffect(isExpense) {
         selectedCategoryId = 0
@@ -3012,13 +3132,59 @@ fun RecurringTransactionForm(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Schedule Repeating", fontWeight = FontWeight.Bold) },
+                title = { Text("AutoPay Setup", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Rounded.Close, contentDescription = "Cancel")
                     }
                 }
             )
+        },
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(16.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val amount = amountStr.toDoubleOrNull()
+                        if (amount == null || amount <= 0) {
+                            coroutineScope.launch { localSnackbarHostState.showSnackbar("Please enter a valid amount > 0") }
+                            return@Button
+                        }
+                        if (selectedAccountId == 0) {
+                            coroutineScope.launch { localSnackbarHostState.showSnackbar("Please select an account") }
+                            return@Button
+                        }
+                        if (selectedCategoryId == 0) {
+                            coroutineScope.launch { localSnackbarHostState.showSnackbar("Please select a category") }
+                            return@Button
+                        }
+
+                        viewModel.insertRecurringRule(
+                            amount = amount,
+                            type = if (isExpense) "expense" else "income",
+                            categoryId = selectedCategoryId,
+                            accountId = selectedAccountId,
+                            note = note.takeIf { it.isNotBlank() } ?: "AutoPay Entry",
+                            frequency = frequency,
+                            startDate = startDate,
+                            endConditionType = endConditionType,
+                            endConditionValue = if (endConditionType == "date") endConditionDate else if (endConditionType == "count") endConditionCount else ""
+                        )
+                        coroutineScope.launch { localSnackbarHostState.showSnackbar("AutoPay rule scheduled!") }
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("Save AutoPay Rule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     ) { innerPadding ->
         Column(
@@ -3029,7 +3195,18 @@ fun RecurringTransactionForm(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // INCOME / EXPENSE SEGMENTED SWITCH
+            // 1. Amount
+            OutlinedTextField(
+                value = amountStr,
+                onValueChange = { amountStr = it },
+                label = { Text("Amount") },
+                placeholder = { Text("0.00") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 2. Transaction Type
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3105,81 +3282,43 @@ fun RecurringTransactionForm(
                 }
             }
 
-            OutlinedTextField(
-                value = amountStr,
-                onValueChange = { amountStr = it },
-                label = { Text("Amount") },
-                placeholder = { Text("0.00") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+            // 3. Category Searchable Dropdown
+            val activeCategory = filteredCategories.find { it.id == selectedCategoryId }
+            SearchableDropdownField(
+                label = "Category",
+                selectedValueName = activeCategory?.name ?: "Select Category",
+                items = filteredCategories,
+                itemToName = { it.name },
+                itemToIcon = { category, modifier ->
+                    IconMapper.CategoryIcon(
+                        icon = category.icon,
+                        categoryName = category.name,
+                        modifier = modifier,
+                        tint = Color(android.graphics.Color.parseColor(category.color))
+                    )
+                },
+                onItemSelected = { selectedCategoryId = it.id }
             )
 
-            Text("Frequency", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                frequencies.forEach { freq ->
-                    val selected = frequency == freq
-                    FilterChip(
-                        selected = selected,
-                        onClick = { frequency = freq },
-                        label = { Text(freq.replaceFirstChar { it.uppercase() }) }
+            // 4. Account Searchable Dropdown
+            val activeAccount = accounts.find { it.id == selectedAccountId }
+            SearchableDropdownField(
+                label = "Account",
+                selectedValueName = activeAccount?.name ?: "Select Account",
+                items = accounts,
+                itemToName = { it.name },
+                itemToIcon = { account, modifier ->
+                    Icon(
+                        imageVector = IconMapper.getIcon(account.icon),
+                        contentDescription = null,
+                        modifier = modifier,
+                        tint = Color(android.graphics.Color.parseColor(account.color))
                     )
-                }
-            }
+                },
+                onItemSelected = { selectedAccountId = it.id }
+            )
 
-            // SELECT ACCOUNT
-            Text("Select Account", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(accounts) { account ->
-                    val selected = selectedAccountId == account.id
-                    FilterChip(
-                        selected = selected,
-                        onClick = { selectedAccountId = account.id },
-                        label = { Text(account.name) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = IconMapper.getIcon(account.icon),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = Color(android.graphics.Color.parseColor(account.color))
-                            )
-                        }
-                    )
-                }
-            }
-
-            // SELECT CATEGORY
-            Text("Select Category", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                filteredCategories.forEach { category ->
-                    val selected = selectedCategoryId == category.id
-                    FilterChip(
-                        selected = selected,
-                        onClick = { selectedCategoryId = category.id },
-                        label = { Text(category.name) },
-                        leadingIcon = {
-                            IconMapper.CategoryIcon(
-                                icon = category.icon,
-                                categoryName = category.name,
-                                modifier = Modifier.size(24.dp),
-                                tint = Color(android.graphics.Color.parseColor(category.color))
-                            )
-                        }
-                    )
-                }
-            }
-
-            // START DATE Picker
+            // 5. Date (First Execution Date)
             OutlinedTextField(
                 value = startDate,
                 onValueChange = {},
@@ -3200,52 +3339,236 @@ fun RecurringTransactionForm(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // NOTE
+            // 6. Repeat Frequency
+            Text("Repeat Frequency", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                frequencies.forEach { freq ->
+                    val selected = frequency == freq
+                    FilterChip(
+                        selected = selected,
+                        onClick = { frequency = freq },
+                        label = { Text(freq.replaceFirstChar { it.uppercase() }) }
+                    )
+                }
+            }
+
+            // 7. End Condition
+            Text("End Condition", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("never" to "Never", "date" to "On Date", "count" to "After Count").forEach { (type, label) ->
+                    val selected = endConditionType == type
+                    FilterChip(
+                        selected = selected,
+                        onClick = { endConditionType = type },
+                        label = { Text(label) }
+                    )
+                }
+            }
+
+            if (endConditionType == "date") {
+                OutlinedTextField(
+                    value = endConditionDate,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("End Date") },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val cal = Calendar.getInstance()
+                            DatePickerDialog(
+                                context,
+                                { _, y, m, d -> endConditionDate = String.format("%04d-%02d-%02d", y, m + 1, d) },
+                                cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        }) {
+                            Icon(Icons.Rounded.CalendarToday, contentDescription = "Pick End Date")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (endConditionType == "count") {
+                OutlinedTextField(
+                    value = endConditionCount,
+                    onValueChange = { endConditionCount = it.replace(Regex("[^0-9]"), "") },
+                    label = { Text("Number of Occurrences") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // 8. Notes
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
-                label = { Text("Description / Label") },
+                label = { Text("Description / Label / Notes") },
                 placeholder = { Text("e.g. Netflix Subscription, Gym Fee, Monthly Rent") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // Help & Explanation Info Box
+            var showHelp by remember { mutableStateOf(false) }
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showHelp = !showHelp },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.HelpOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Help & Explanation",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Icon(
+                            imageVector = if (showHelp) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (showHelp) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
 
-            Button(
-                onClick = {
-                    val amount = amountStr.toDoubleOrNull()
-                    if (amount == null || amount <= 0) {
-                        coroutineScope.launch { localSnackbarHostState.showSnackbar("Please enter a valid amount > 0") }
-                        return@Button
+                    AnimatedVisibility(visible = showHelp) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 12.dp)
+                        ) {
+                            Text(
+                                "• AutoPay: Set up transaction rules that run automatically on trigger dates.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "• Income / Expense Switch: Toggle money flow direction.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "• Category: Select standard or custom category for categorization.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "• Account: Select cash/bank/wallet target.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "• End Condition: Stop rule repeating automatically after execution counts or on a specific date.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
-                    if (selectedAccountId == 0) {
-                        coroutineScope.launch { localSnackbarHostState.showSnackbar("Please select an account") }
-                        return@Button
-                    }
-                    if (selectedCategoryId == 0) {
-                        coroutineScope.launch { localSnackbarHostState.showSnackbar("Please select a category") }
-                        return@Button
-                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
 
-                    viewModel.insertRecurringRule(
-                        amount = amount,
-                        type = if (isExpense) "expense" else "income",
-                        categoryId = selectedCategoryId,
-                        accountId = selectedAccountId,
-                        note = note.takeIf { it.isNotBlank() } ?: "Repeating Entry",
-                        frequency = frequency,
-                        startDate = startDate
-                    )
-                    coroutineScope.launch { localSnackbarHostState.showSnackbar("Recurring rule scheduled!") }
-                    onDismiss()
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun <T> SearchableDropdownField(
+    label: String,
+    selectedValueName: String,
+    items: List<T>,
+    itemToName: (T) -> String,
+    itemToIcon: @Composable ((T, Modifier) -> Unit)? = null,
+    onItemSelected: (T) -> Unit,
+    placeholder: String = "Select option"
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    val filteredItems = remember(searchQuery, items) {
+        items.filter { itemToName(it).contains(searchQuery, ignoreCase = true) }
+    }
+    
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = selectedValueName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            placeholder = { Text(placeholder) },
+            trailingIcon = {
+                IconButton(onClick = { expanded = true }) {
+                    Icon(if (expanded) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown, contentDescription = "Dropdown")
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        
+        if (expanded) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { 
+                    expanded = false
+                    searchQuery = ""
                 },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp)
+                    .fillMaxWidth(0.9f)
+                    .heightIn(max = 280.dp)
             ) {
-                Text("Schedule Recurring Entry", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                // Search bar inside dropdown menu
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search...") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                if (filteredItems.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No results found", style = MaterialTheme.typography.bodyMedium, color = Color.Gray) },
+                        onClick = {},
+                        enabled = false
+                    )
+                } else {
+                    filteredItems.forEach { item ->
+                        val name = itemToName(item)
+                        DropdownMenuItem(
+                            leadingIcon = itemToIcon?.let { { it(item, Modifier.size(24.dp)) } },
+                            text = { Text(name) },
+                            onClick = {
+                                onItemSelected(item)
+                                expanded = false
+                                searchQuery = ""
+                            }
+                        )
+                    }
+                }
             }
         }
     }

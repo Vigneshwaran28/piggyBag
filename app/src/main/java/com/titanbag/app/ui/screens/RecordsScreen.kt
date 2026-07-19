@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import com.titanbag.app.ui.theme.LocalVisualStyle
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -335,7 +337,7 @@ fun RecordsScreen(
                 } else {
                     // Normal App Bar
                     com.titanbag.app.ui.components.TitanBagTopBar(
-                        title = "TitanBag",
+                        title = "PiggyBag",
                         actionIcon = Icons.Rounded.Search,
                         onActionClick = onSearchClick,
                         actionContentDescription = "Search"
@@ -391,11 +393,7 @@ fun RecordsScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .clickable {
-                                    if (activeHomeDateFilter == "Custom") {
-                                        showCustomDateRangeDialog = true
-                                    }
-                                },
+                                .clickable { showCustomDateRangeDialog = true },
                             contentAlignment = Alignment.Center
                         ) {
                             AnimatedContent(
@@ -551,10 +549,38 @@ fun RecordsScreen(
                             viewModel.setScrolling(isScrolling)
                         }
                     }
+                    val visualStyle = LocalVisualStyle.current
+                    val isDiary = visualStyle == "diary"
+
                     Box(modifier = Modifier.fillMaxSize()) {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = if (isDiary) {
+                                Modifier
+                                    .fillMaxSize()
+                                    .drawBehind {
+                                        val lineSpacing = 30.dp.toPx()
+                                        val lineCount = (size.height / lineSpacing).toInt()
+                                        for (i in 1..lineCount) {
+                                            val y = i * lineSpacing
+                                            drawLine(
+                                                color = Color(0xFFD4E3FC),
+                                                start = Offset(0f, y),
+                                                end = Offset(size.width, y),
+                                                strokeWidth = 1f
+                                            )
+                                        }
+                                        val redLineX = 32.dp.toPx()
+                                        drawLine(
+                                            color = Color(0xFFFCA5A5),
+                                            start = Offset(redLineX, 0f),
+                                            end = Offset(redLineX, size.height),
+                                            strokeWidth = 1.5f
+                                        )
+                                    }
+                            } else {
+                                Modifier.fillMaxSize()
+                            },
                             contentPadding = PaddingValues(bottom = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -757,7 +783,7 @@ fun RecordsScreen(
                             cal.set(Calendar.MINUTE, 59)
                             cal.set(Calendar.SECOND, 59)
                             val finalEnd = cal.timeInMillis
-                            
+                            viewModel.setHomeDateFilterOption("Custom")
                             viewModel.filterDateRange.value = Pair(customStartDate, finalEnd)
                         } else {
                             viewModel.filterDateRange.value = null
@@ -773,7 +799,6 @@ fun RecordsScreen(
                 TextButton(
                     onClick = { 
                         showCustomDateRangeDialog = false 
-                        selectedDatePeriod = "All Time"
                     }
                 ) {
                     Text("Cancel")
@@ -782,9 +807,9 @@ fun RecordsScreen(
         ) {
             DateRangePicker(
                 state = dateRangePickerState,
-                title = { Text("Select Date Range", modifier = Modifier.padding(16.dp)) },
-                headline = { Text("Filter Transactions", modifier = Modifier.padding(16.dp)) },
-                showModeToggle = false,
+                title = { Text("Pick Date Range", modifier = Modifier.padding(16.dp)) },
+                headline = { Text("Select start and end dates to filter transactions", modifier = Modifier.padding(16.dp)) },
+                showModeToggle = true,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -841,10 +866,37 @@ fun TransactionListItem(
         try { Color(android.graphics.Color.parseColor(transaction.categoryColor)) } catch (e: Exception) { Color.Gray }
     }
     
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
+
     val isIncome = transaction.type == "income"
     val signedAmount = if (isIncome) "+$currency${String.format("%.2f", transaction.amount)}" 
                        else "-$currency${String.format("%.2f", transaction.amount)}"
-    val amountColor = if (isIncome) Color(0xFF81C784) else Color(0xFFFF7575)
+    val amountColor = if (isDiary) {
+        if (isIncome) Color(0xFF2E7D32) else Color(0xFFC62828)
+    } else {
+        if (isIncome) Color(0xFF81C784) else Color(0xFFFF7575)
+    }
+
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    } else if (isDiary) {
+        if (isIncome) Color(0xFFF1F8E9) else Color(0xFFFFFDE7)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    val cardShape = if (isDiary) RoundedCornerShape(24.dp) else RoundedCornerShape(16.dp)
+    val cardBorder = BorderStroke(
+        width = 1.dp,
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else if (isDiary) {
+            Color(0xFFD4C3A3)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        }
+    )
 
     Card(
         modifier = Modifier
@@ -854,11 +906,11 @@ fun TransactionListItem(
                 onLongClick = onLongClick
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+            containerColor = containerColor
         ),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = cardShape,
+        border = cardBorder,
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDiary) 2.dp else 0.dp)
     ) {
         Row(
             modifier = Modifier

@@ -3,6 +3,8 @@ package com.titanbag.app.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.titanbag.app.data.TitanBagViewModel
+import com.titanbag.app.ui.theme.LocalVisualStyle
 
 @Composable
 fun SplashAndLockScreen(
@@ -58,17 +61,29 @@ fun SplashAndLockScreen(
         }
     }
 
+    val visualStyle = LocalVisualStyle.current
+    val isDiary = visualStyle == "diary"
+
     if (shouldLock && isLocked) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                            MaterialTheme.colorScheme.surface
+                    if (isDiary) {
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF4A0E0E).copy(alpha = 0.8f), // Leather
+                                Color(0xFF2A2621)
+                            )
                         )
-                    )
+                    } else {
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -81,25 +96,29 @@ fun SplashAndLockScreen(
                 // Padlock Icon
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .size(100.dp)
+                        .clip(if (isDiary) RoundedCornerShape(12.dp) else RoundedCornerShape(16.dp))
+                        .background(if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.primaryContainer)
+                        .border(
+                            if (isDiary) BorderStroke(4.dp, Color(0xFFD4C3A3)) else BorderStroke(0.dp, Color.Transparent),
+                            if (isDiary) RoundedCornerShape(12.dp) else RoundedCornerShape(16.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Lock,
                         contentDescription = "Locked",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(40.dp)
+                        tint = if (isDiary) Color(0xFF003366) else MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(48.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Text(
-                    text = "TitanBag Secure",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "PiggyBag Secure",
+                    style = if (isDiary) MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -107,10 +126,10 @@ fun SplashAndLockScreen(
                 Text(
                     text = if (isPinSet) "Enter your PIN or use biometrics to unlock" else "Authenticate using system biometrics to unlock",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isDiary) Color(0xFFF4ECD8).copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(48.dp))
 
                 if (isPinSet) {
                     // PIN Indicator Dots
@@ -121,7 +140,7 @@ fun SplashAndLockScreen(
                         for (i in 1..6) {
                             val active = i <= enteredPin.length
                             val sizeAnim by animateDpAsState(
-                                targetValue = if (active) 16.dp else 12.dp,
+                                targetValue = if (active) 18.dp else 12.dp,
                                 animationSpec = com.titanbag.app.ui.components.TitanBagAnimations.defaultSpring(),
                                 label = "dot"
                             )
@@ -130,14 +149,18 @@ fun SplashAndLockScreen(
                                     .size(sizeAnim)
                                     .clip(CircleShape)
                                     .background(
-                                        if (active) MaterialTheme.colorScheme.primary 
-                                        else MaterialTheme.colorScheme.outlineVariant
+                                        if (active) (if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.primary) 
+                                        else (if (isDiary) Color(0xFFF4ECD8).copy(alpha = 0.3f) else MaterialTheme.colorScheme.outlineVariant)
+                                    )
+                                    .border(
+                                        if (isDiary && !active) BorderStroke(1.dp, Color(0xFFF4ECD8)) else BorderStroke(0.dp, Color.Transparent),
+                                        CircleShape
                                     )
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     if (errorMessage.isNotEmpty()) {
                         Text(
@@ -149,7 +172,7 @@ fun SplashAndLockScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                     }
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(48.dp))
 
                     // Grid Numeric Keypad
                     Column(
@@ -167,11 +190,12 @@ fun SplashAndLockScreen(
                             columns = GridCells.Fixed(3),
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.height(280.dp)
+                            modifier = Modifier.height(300.dp)
                         ) {
                             items(keys) { key ->
                                 KeypadButton(
                                     value = key,
+                                    isDiary = isDiary,
                                     onClick = {
                                         errorMessage = ""
                                         when (key) {
@@ -217,9 +241,9 @@ fun SplashAndLockScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(100.dp)
+                                .size(120.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .background(if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.primaryContainer)
                                 .clickable {
                                     onTriggerBiometric {
                                         onUnlockSuccess()
@@ -230,17 +254,17 @@ fun SplashAndLockScreen(
                             Icon(
                                 imageVector = Icons.Rounded.Fingerprint,
                                 contentDescription = "Trigger Biometric",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(56.dp)
+                                tint = if (isDiary) Color(0xFF003366) else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(64.dp)
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
                         Text(
-                            text = "Tap fingerprint icon to trigger system face / fingerprint unlock",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
+                            text = "Tap icon to unlock vault",
+                            style = if (isDiary) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.primary
                         )
 
                         if (errorMessage.isNotEmpty()) {
@@ -261,6 +285,7 @@ fun SplashAndLockScreen(
 @Composable
 fun KeypadButton(
     value: String,
+    isDiary: Boolean = false,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -268,10 +293,19 @@ fun KeypadButton(
     Box(
         modifier = Modifier
             .aspectRatio(1.2f)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(if (isDiary) RoundedCornerShape(12.dp) else RoundedCornerShape(16.dp))
             .background(
-                if (value == "DEL" || value == "BIO") MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.surfaceVariant
+                if (isDiary) {
+                    if (value == "DEL" || value == "BIO") Color(0xFFF4ECD8).copy(alpha = 0.2f)
+                    else Color(0xFFF4ECD8)
+                } else {
+                    if (value == "DEL" || value == "BIO") MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    else MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+            .border(
+                if (isDiary) BorderStroke(2.dp, Color(0xFFD4C3A3)) else BorderStroke(0.dp, Color.Transparent),
+                if (isDiary) RoundedCornerShape(12.dp) else RoundedCornerShape(16.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -285,21 +319,21 @@ fun KeypadButton(
                 Icon(
                     imageVector = Icons.Rounded.Delete,
                     contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             "BIO" -> {
                 Icon(
                     imageVector = Icons.Rounded.Fingerprint,
                     contentDescription = "Biometric Unlock",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (isDiary) Color(0xFFF4ECD8) else MaterialTheme.colorScheme.primary
                 )
             }
             else -> {
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = if (isDiary) MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black) else MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = if (isDiary) Color(0xFF003366) else MaterialTheme.colorScheme.onSurface
                 )
             }
         }

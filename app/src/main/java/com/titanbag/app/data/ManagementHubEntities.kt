@@ -41,7 +41,16 @@ data class Group(
     val groupPin: String,
     val createdBy: String, // LocalUserProfile.id
     val createdDate: String,
-    val status: String // "active", "completed"
+    val status: String, // "Running", "Completed", "Cancelled", "Archived"
+    val description: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val destination: String = "",
+    val photos: String = "",
+    val receipts: String = "",
+    val budget: Double = 0.0,
+    val currency: String = "₹",
+    val notes: String = ""
 )
 
 @Entity(
@@ -83,7 +92,40 @@ data class GroupExpense(
     val amount: Double,
     val description: String,
     val expenseDate: String,
-    val createdAt: String
+    val createdAt: String,
+    val category: String = "",
+    val subcategory: String = "",
+    val receipt: String = "",
+    val location: String = "",
+    val paymentMethod: String = "",
+    val lastModified: String = "",
+    val tags: String = "",
+    val participantsIncluded: String = "",
+    val splitType: String = "Equal",
+    val shares: String = ""
+)
+
+@Entity(
+    tableName = "group_settlements",
+    foreignKeys = [
+        ForeignKey(
+            entity = Group::class,
+            parentColumns = ["id"],
+            childColumns = ["groupId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("groupId")]
+)
+data class GroupSettlement(
+    @PrimaryKey val id: String, // UUID
+    val groupId: String,
+    val fromUserId: String,
+    val fromUserName: String,
+    val toUserId: String,
+    val toUserName: String,
+    val amount: Double,
+    val status: String // "Pending", "Partially Paid", "Paid", "Disputed", "Cancelled"
 )
 
 @Entity(

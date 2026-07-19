@@ -18,8 +18,11 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     
-    val googleClientId = project.findProperty("GOOGLE_WEB_CLIENT_ID") ?: "519040911729-h8a7636p84v7vltnvstd6p9q9n0nc66v.apps.googleusercontent.com"
+    val googleClientId = project.findProperty("GOOGLE_WEB_CLIENT_ID")?.toString() ?: ""
+    val cloudBaseUrl = project.findProperty("CLOUD_BASE_URL")?.toString() ?: "https://titanbag.onrender.com/"
+
     buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
+    buildConfigField("String", "CLOUD_BASE_URL", "\"$cloudBaseUrl\"")
   }
 
   buildTypes {
@@ -75,6 +78,7 @@ dependencies {
   implementation(libs.androidx.camera.camera2)
   implementation(libs.androidx.camera.lifecycle)
   implementation(libs.androidx.camera.view)
+  implementation(libs.material)
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)

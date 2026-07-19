@@ -1,5 +1,6 @@
 package com.titanbag.app.data
 
+import androidx.room.withTransaction
 import com.titanbag.app.data.api.*
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
@@ -173,6 +174,16 @@ class CloudRepository(
     }
 
 
+    private fun parseErrorMessage(errorBody: String?, fallback: String): String {
+        if (errorBody == null) return fallback
+        return try {
+            val json = org.json.JSONObject(errorBody)
+            json.optString("message", fallback)
+        } catch (e: Exception) {
+            fallback
+        }
+    }
+
     suspend fun register(username: String, email: String, password: String, displayName: String, deviceId: String): Result<UserEntity> {
         return try {
             val api = apiClient.getService()
@@ -183,7 +194,7 @@ class CloudRepository(
                 val auth = response.body()!!
                 return handleAuthSuccess(auth)
             } else {
-                val errorMsg = response.errorBody()?.string() ?: "Registration failed"
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Registration failed")
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
@@ -201,7 +212,7 @@ class CloudRepository(
                 val auth = response.body()!!
                 return handleAuthSuccess(auth)
             } else {
-                val errorMsg = response.errorBody()?.string() ?: "Login failed"
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Login failed")
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
@@ -209,7 +220,7 @@ class CloudRepository(
         }
     }
 
-    suspend fun loginWithGoogle(idToken: String, displayName: String? = null, profilePhoto: String? = null, deviceId: String): Result<UserEntity> {
+    suspend fun loginWithGoogle(idToken: String, displayName: String? = null, profilePhoto: String? = null, deviceId: String): Result<Pair<UserEntity, Boolean>> {
         return try {
             val api = apiClient.getService()
             val deviceModel = android.os.Build.MODEL
@@ -217,9 +228,25 @@ class CloudRepository(
             val response = api.loginWithGoogle(GoogleLoginRequest(idToken, displayName, profilePhoto, deviceModel, deviceManufacturer, deviceId))
             if (response.isSuccessful && response.body() != null) {
                 val auth = response.body()!!
-                return handleAuthSuccess(auth)
+                val isNew = auth.isNew ?: false
+                handleAuthSuccess(auth).map { it to isNew }
             } else {
-                val errorMsg = response.errorBody()?.string() ?: "Google login failed"
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Google login failed")
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setPassword(password: String): Result<GeneralResponse> {
+        return try {
+            val api = apiClient.getService()
+            val response = api.setPassword(SetPasswordRequest(password))
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Failed to set password")
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
@@ -258,64 +285,66 @@ class CloudRepository(
 
         // Manage LocalUserProfile and migrate local data to the new cloud userId
         try {
-            val profileDao = db.localUserProfileDao()
-            val localProfiles = profileDao.getAllProfilesDirect()
-            val cloudUserId = auth.user.id
-            val cloudEmail = auth.user.email
-            val cloudName = auth.user.displayName ?: auth.user.username
-            val cloudShareCode = auth.user.partnerShareCode
-            val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+            db.withTransaction {
+                val profileDao = db.localUserProfileDao()
+                val localProfiles = profileDao.getAllProfilesDirect()
+                val cloudUserId = auth.user.id
+                val cloudEmail = auth.user.email
+                val cloudName = auth.user.displayName ?: auth.user.username
+                val cloudShareCode = auth.user.partnerShareCode
+                val nowStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
 
-            val existingProfile = localProfiles.find {
-                it.id == cloudUserId || 
-                it.email.equals(cloudEmail, ignoreCase = true) ||
-                it.name.equals(cloudName, ignoreCase = true) ||
-                it.name.equals(auth.user.username, ignoreCase = true)
-            }
-
-            if (existingProfile != null) {
-                if (existingProfile.id != cloudUserId) {
-                    val oldId = existingProfile.id
-                    profileDao.deleteProfile(existingProfile)
-                    val updatedProfile = LocalUserProfile(
-                        id = cloudUserId,
-                        name = cloudName,
-                        email = cloudEmail,
-                        partnerShareCode = cloudShareCode,
-                        createdDate = existingProfile.createdDate
-                    )
-                    profileDao.insertProfile(updatedProfile)
-
-                    // Migrate local tables
-                    db.accountDao().updateUserId(oldId, cloudUserId)
-                    db.transactionDao().updateUserId(oldId, cloudUserId)
-                    db.budgetDao().updateUserId(oldId, cloudUserId)
-                    db.savingsGoalDao().updateUserId(oldId, cloudUserId)
-                    db.recurringTransactionDao().updateUserId(oldId, cloudUserId)
-                    db.debtRecordDao().updateUserId(oldId, cloudUserId)
-                    db.partnerConnectionDao().updateUserId(oldId, cloudUserId)
-                    db.groupDao().updateCreatedBy(oldId, cloudUserId)
-                    db.groupMemberDao().updateUserId(oldId, cloudUserId)
-                    db.groupExpenseDao().updateUserId(oldId, cloudUserId)
-                } else {
-                    val updatedProfile = LocalUserProfile(
-                        id = cloudUserId,
-                        name = cloudName,
-                        email = cloudEmail,
-                        partnerShareCode = cloudShareCode,
-                        createdDate = existingProfile.createdDate
-                    )
-                    profileDao.insertProfile(updatedProfile)
+                val existingProfile = localProfiles.find {
+                    it.id == cloudUserId || 
+                    it.email.equals(cloudEmail, ignoreCase = true) ||
+                    it.name.equals(cloudName, ignoreCase = true) ||
+                    it.name.equals(auth.user.username, ignoreCase = true)
                 }
-            } else {
-                val newProfile = LocalUserProfile(
-                    id = cloudUserId,
-                    name = cloudName,
-                    email = cloudEmail,
-                    partnerShareCode = cloudShareCode,
-                    createdDate = nowStr
-                )
-                profileDao.insertProfile(newProfile)
+
+                if (existingProfile != null) {
+                    if (existingProfile.id != cloudUserId) {
+                        val oldId = existingProfile.id
+                        profileDao.deleteProfile(existingProfile)
+                        val updatedProfile = LocalUserProfile(
+                            id = cloudUserId,
+                            name = cloudName,
+                            email = cloudEmail,
+                            partnerShareCode = cloudShareCode,
+                            createdDate = existingProfile.createdDate
+                        )
+                        profileDao.insertProfile(updatedProfile)
+
+                        // Migrate local tables
+                        db.accountDao().updateUserId(oldId, cloudUserId)
+                        db.transactionDao().updateUserId(oldId, cloudUserId)
+                        db.budgetDao().updateUserId(oldId, cloudUserId)
+                        db.savingsGoalDao().updateUserId(oldId, cloudUserId)
+                        db.recurringTransactionDao().updateUserId(oldId, cloudUserId)
+                        db.debtRecordDao().updateUserId(oldId, cloudUserId)
+                        db.partnerConnectionDao().updateUserId(oldId, cloudUserId)
+                        db.groupDao().updateCreatedBy(oldId, cloudUserId)
+                        db.groupMemberDao().updateUserId(oldId, cloudUserId)
+                        db.groupExpenseDao().updateUserId(oldId, cloudUserId)
+                    } else {
+                        val updatedProfile = LocalUserProfile(
+                            id = cloudUserId,
+                            name = cloudName,
+                            email = cloudEmail,
+                            partnerShareCode = cloudShareCode,
+                            createdDate = existingProfile.createdDate
+                        )
+                        profileDao.insertProfile(updatedProfile)
+                    }
+                } else {
+                    val newProfile = LocalUserProfile(
+                        id = cloudUserId,
+                        name = cloudName,
+                        email = cloudEmail,
+                        partnerShareCode = cloudShareCode,
+                        createdDate = nowStr
+                    )
+                    profileDao.insertProfile(newProfile)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -394,12 +423,14 @@ class CloudRepository(
     suspend fun connectPartner(partnerCode: String): Result<String> {
         return try {
             val api = apiClient.getService()
-            val response = api.connectPartner(ConnectPartnerRequest(partnerCode))
+            val cleanCode = partnerCode.replace("-", "").trim().uppercase()
+            val response = api.connectPartner(ConnectPartnerRequest(cleanCode))
             if (response.isSuccessful && response.body() != null) {
                 fetchProfile() // Refresh partner state locally
                 Result.success(response.body()!!.message)
             } else {
-                Result.failure(Exception(response.errorBody()?.string() ?: "Failed to connect partner"))
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Failed to connect partner")
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -421,7 +452,8 @@ class CloudRepository(
 
                 Result.success(response.body()!!.message)
             } else {
-                Result.failure(Exception(response.errorBody()?.string() ?: "Failed to disconnect partner"))
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Failed to disconnect partner")
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -437,7 +469,8 @@ class CloudRepository(
                 sessionManager.savePartner(null, null)
                 Result.success(response.body()!!.message)
             } else {
-                Result.failure(Exception(response.errorBody()?.string() ?: "Failed to block partner"))
+                val errorMsg = parseErrorMessage(response.errorBody()?.string(), "Failed to block partner")
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -595,84 +628,27 @@ class CloudRepository(
             val response = api.syncJournals(SyncRequest(syncPayloads))
             if (response.isSuccessful && response.body() != null) {
                 val syncData = response.body()!!
-                val syncedIdsSet = syncData.syncedIds.toSet()
+                
+                db.withTransaction {
+                    val syncedIdsSet = syncData.syncedIds.toSet()
 
-                // 3. Update locally pushed changes that were successfully synchronized
-                pendingJournals.forEach { local ->
-                    if (syncedIdsSet.contains(local.id)) {
-                        queueDao.deleteQueueItemByEntityId(local.id)
-                        if (local.deleted) {
-                            journalDao.deleteJournalById(local.id)
-                        } else {
-                            journalDao.insertJournal(local.copy(syncStatus = "SYNCED"))
+                    // 3. Update locally pushed changes that were successfully synchronized
+                    pendingJournals.forEach { local ->
+                        if (syncedIdsSet.contains(local.id)) {
+                            queueDao.deleteQueueItemByEntityId(local.id)
+                            if (local.deleted) {
+                                journalDao.deleteJournalById(local.id)
+                            } else {
+                                journalDao.insertJournal(local.copy(syncStatus = "SYNCED"))
+                            }
                         }
                     }
-                }
 
-                // 4. Incorporate remote changes (including partner journals)
-                syncData.remoteJournals.forEach { remote ->
-                    val local = journalDao.getJournalById(remote.id)
-                    if (local == null) {
-                        if (!remote.deleted) {
-                            journalDao.insertJournal(
-                                JournalEntity(
-                                    id = remote.id,
-                                    ownerId = remote.ownerId,
-                                    sharedPartnerId = remote.sharedPartnerId,
-                                    title = remote.title,
-                                    amount = remote.amount,
-                                    type = remote.type,
-                                    category = remote.category,
-                                    notes = remote.notes,
-                                    paymentMethod = remote.paymentMethod,
-                                    location = remote.location,
-                                    date = remote.date,
-                                    createdAt = remote.createdAt,
-                                    updatedAt = remote.updatedAt,
-                                    syncStatus = "SYNCED",
-                                    deleted = false
-                                )
-                            )
-                        }
-                    } else {
-                        // Conflict resolution: Newest updated_at wins!
-                        val localPendingQueue = queueDao.getQueueItemByEntityId(remote.id)
-                        
-                        if (localPendingQueue != null) {
-                            // If local has pending edits, compare timestamps
-                            if (remote.updatedAt > local.updatedAt) {
-                                // Server wins
-                                if (remote.deleted) {
-                                    journalDao.deleteJournalById(remote.id)
-                                } else {
-                                    journalDao.insertJournal(
-                                        local.copy(
-                                            ownerId = remote.ownerId,
-                                            sharedPartnerId = remote.sharedPartnerId,
-                                            title = remote.title,
-                                            amount = remote.amount,
-                                            type = remote.type,
-                                            category = remote.category,
-                                            notes = remote.notes,
-                                            paymentMethod = remote.paymentMethod,
-                                            location = remote.location,
-                                            date = remote.date,
-                                            createdAt = remote.createdAt,
-                                            updatedAt = remote.updatedAt,
-                                            syncStatus = "SYNCED",
-                                            deleted = false
-                                        )
-                                    )
-                                }
-                                queueDao.deleteQueueItemByEntityId(remote.id)
-                            } else {
-                                // Local wins, keep local version. It will be uploaded in next sync.
-                            }
-                        } else {
-                            // Local has no edits, simply update to remote version
-                            if (remote.deleted) {
-                                journalDao.deleteJournalById(remote.id)
-                            } else {
+                    // 4. Incorporate remote changes (including partner journals)
+                    syncData.remoteJournals.forEach { remote ->
+                        val local = journalDao.getJournalById(remote.id)
+                        if (local == null) {
+                            if (!remote.deleted) {
                                 journalDao.insertJournal(
                                     JournalEntity(
                                         id = remote.id,
@@ -692,6 +668,66 @@ class CloudRepository(
                                         deleted = false
                                     )
                                 )
+                            }
+                        } else {
+                            // Conflict resolution: Newest updated_at wins!
+                            val localPendingQueue = queueDao.getQueueItemByEntityId(remote.id)
+                            
+                            if (localPendingQueue != null) {
+                                // If local has pending edits, compare timestamps
+                                if (remote.updatedAt > local.updatedAt) {
+                                    // Server wins
+                                    if (remote.deleted) {
+                                        journalDao.deleteJournalById(remote.id)
+                                    } else {
+                                        journalDao.insertJournal(
+                                            local.copy(
+                                                ownerId = remote.ownerId,
+                                                sharedPartnerId = remote.sharedPartnerId,
+                                                title = remote.title,
+                                                amount = remote.amount,
+                                                type = remote.type,
+                                                category = remote.category,
+                                                notes = remote.notes,
+                                                paymentMethod = remote.paymentMethod,
+                                                location = remote.location,
+                                                date = remote.date,
+                                                createdAt = remote.createdAt,
+                                                updatedAt = remote.updatedAt,
+                                                syncStatus = "SYNCED",
+                                                deleted = false
+                                            )
+                                        )
+                                    }
+                                    queueDao.deleteQueueItemByEntityId(remote.id)
+                                } else {
+                                    // Local wins, keep local version. It will be uploaded in next sync.
+                                }
+                            } else {
+                                // Local has no edits, simply update to remote version
+                                if (remote.deleted) {
+                                    journalDao.deleteJournalById(remote.id)
+                                } else {
+                                    journalDao.insertJournal(
+                                        JournalEntity(
+                                            id = remote.id,
+                                            ownerId = remote.ownerId,
+                                            sharedPartnerId = remote.sharedPartnerId,
+                                            title = remote.title,
+                                            amount = remote.amount,
+                                            type = remote.type,
+                                            category = remote.category,
+                                            notes = remote.notes,
+                                            paymentMethod = remote.paymentMethod,
+                                            location = remote.location,
+                                            date = remote.date,
+                                            createdAt = remote.createdAt,
+                                            updatedAt = remote.updatedAt,
+                                            syncStatus = "SYNCED",
+                                            deleted = false
+                                        )
+                                    )
+                                }
                             }
                         }
                     }

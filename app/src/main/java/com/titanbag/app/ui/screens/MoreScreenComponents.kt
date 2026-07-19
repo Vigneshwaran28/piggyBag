@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -294,7 +295,7 @@ fun CurrencySelectionDialog(currentCurrency: String, onDismiss: () -> Unit, onSe
                 var query by remember { mutableStateOf("") }
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
-                    placeholder = { Text("Search currency...") },
+                    placeholder = { Text("Search currency...", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, softWrap = false) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     shape = CircleShape, singleLine = true, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                 )
@@ -483,5 +484,562 @@ fun EmptyListPlaceholder(title: String, subtitle: String, icon: ImageVector) {
         Spacer(modifier = Modifier.height(16.dp))
         Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ThemeCustomizationScreen(
+    viewModel: TitanBagViewModel,
+    onBack: () -> Unit
+) {
+    val settings by viewModel.settings.collectAsState()
+    val fontStyle by viewModel.fontStyle.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var isCustomEnabled by remember(settings) {
+        mutableStateOf(settings?.colorPalette == "Custom")
+    }
+
+    var primaryHex by remember(settings) {
+        mutableStateOf(settings?.customColor ?: "#005FAF")
+    }
+    var secondaryHex by remember(settings) {
+        mutableStateOf(settings?.customIconColor ?: "#60A5FA")
+    }
+    var bgHex by remember(settings) {
+        mutableStateOf(settings?.customBgColor ?: "#F8FAFC")
+    }
+
+    // RGB slider state derived from primaryHex
+    val (initR, initG, initB) = remember(primaryHex) {
+        try {
+            val cleaned = primaryHex.removePrefix("#")
+            val r = cleaned.substring(0, 2).toInt(16)
+            val g = cleaned.substring(2, 4).toInt(16)
+            val b = cleaned.substring(4, 6).toInt(16)
+            Triple(r, g, b)
+        } catch (e: Exception) {
+            Triple(0, 95, 175)
+        }
+    }
+
+    var sliderR by remember(initR) { mutableStateOf(initR.toFloat()) }
+    var sliderG by remember(initG) { mutableStateOf(initG.toFloat()) }
+    var sliderB by remember(initB) { mutableStateOf(initB.toFloat()) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Theme & Typography", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // CARD 1: LIVE PREVIEW VISUALIZER
+            Text(
+                "Theme Visualizer",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            val previewPrimary = try { Color(android.graphics.Color.parseColor(primaryHex)) } catch (e: Exception) { MaterialTheme.colorScheme.primary }
+            val previewSecondary = try { Color(android.graphics.Color.parseColor(secondaryHex)) } catch (e: Exception) { MaterialTheme.colorScheme.secondary }
+            val previewBg = try { Color(android.graphics.Color.parseColor(bgHex)) } catch (e: Exception) { MaterialTheme.colorScheme.background }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = previewBg),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Visualizer Preview",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = previewPrimary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(previewSecondary)
+                        )
+                    }
+
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = previewPrimary.copy(alpha = 0.08f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Monthly Budget Status", style = MaterialTheme.typography.bodySmall, color = previewPrimary.copy(alpha = 0.8f))
+                                Text("₹18,450.00 left", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = previewPrimary)
+                            }
+                            Text("54%", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold), color = previewSecondary)
+                        }
+                    }
+
+                    // Simulated Progress Bar using preview colors
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(CircleShape)
+                            .background(previewPrimary.copy(alpha = 0.15f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.54f)
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(previewPrimary)
+                        )
+                    }
+                }
+            }
+
+            // CARD 2: SELECT SYSTEM FONT TYPE
+            Text(
+                "Typography Font",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Select system font type:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    val fonts = listOf(
+                        "ibm_plex_sans" to "Default",
+                        "yusei_magic" to "Yusei Magic",
+                        "serif" to "Classic Serif",
+                        "monospace" to "Monospace"
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        fonts.forEach { (style, name) ->
+                            val selected = fontStyle == style
+                            FilterChip(
+                                selected = selected,
+                                onClick = { viewModel.updateFontStyle(style) },
+                                label = { Text(name) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // CARD 3: THEME MODE SELECTOR
+            ThemeModeSelector(settings, viewModel)
+
+            // CARD 4: COLOR PALETTE SELECTION
+            ThemePaletteSelection(settings, viewModel)
+
+            // CARD 5: CUSTOM COLOR DESIGNER (HEX & RGB SLIDERS)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable Custom Colors", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                            Text("Manually define RGB and Hex color codes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        Switch(
+                            checked = isCustomEnabled,
+                            onCheckedChange = {
+                                isCustomEnabled = it
+                                if (!it) {
+                                    viewModel.updateCustomColorsAll(null, null, null)
+                                }
+                            }
+                        )
+                    }
+
+                    if (isCustomEnabled) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                        // HEX INPUT FIELDS
+                        Text("Hex Color Codes", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = primaryHex,
+                                onValueChange = {
+                                    primaryHex = it
+                                    // Also sync RGB sliders if valid length
+                                    if (it.startsWith("#") && it.length == 7) {
+                                        try {
+                                            val cleaned = it.removePrefix("#")
+                                            sliderR = cleaned.substring(0, 2).toInt(16).toFloat()
+                                            sliderG = cleaned.substring(2, 4).toInt(16).toFloat()
+                                            sliderB = cleaned.substring(4, 6).toInt(16).toFloat()
+                                        } catch (e: Exception) {}
+                                    }
+                                },
+                                label = { Text("Primary") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(previewPrimary)
+                                    )
+                                }
+                            )
+
+                            OutlinedTextField(
+                                value = secondaryHex,
+                                onValueChange = { secondaryHex = it },
+                                label = { Text("Secondary") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(previewSecondary)
+                                    )
+                                }
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = bgHex,
+                            onValueChange = { bgHex = it },
+                            label = { Text("Background Color Hex") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(previewBg)
+                                )
+                            }
+                        )
+
+                        // RGB SLIDERS FOR PRIMARY COLOR
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Primary RGB Sliders Range", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                        // Red Slider
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Red: ${sliderR.toInt()}", style = MaterialTheme.typography.bodySmall)
+                                Text("0-255", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Slider(
+                                value = sliderR,
+                                onValueChange = {
+                                    sliderR = it
+                                    primaryHex = String.format("#%02X%02X%02X", it.toInt(), sliderG.toInt(), sliderB.toInt())
+                                },
+                                valueRange = 0f..255f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red.copy(alpha = 0.5f))
+                            )
+                        }
+
+                        // Green Slider
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Green: ${sliderG.toInt()}", style = MaterialTheme.typography.bodySmall)
+                                Text("0-255", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Slider(
+                                value = sliderG,
+                                onValueChange = {
+                                    sliderG = it
+                                    primaryHex = String.format("#%02X%02X%02X", sliderR.toInt(), it.toInt(), sliderB.toInt())
+                                },
+                                valueRange = 0f..255f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Green, activeTrackColor = Color.Green.copy(alpha = 0.5f))
+                            )
+                        }
+
+                        // Blue Slider
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Blue: ${sliderB.toInt()}", style = MaterialTheme.typography.bodySmall)
+                                Text("0-255", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Slider(
+                                value = sliderB,
+                                onValueChange = {
+                                    sliderB = it
+                                    primaryHex = String.format("#%02X%02X%02X", sliderR.toInt(), sliderG.toInt(), it.toInt())
+                                },
+                                valueRange = 0f..255f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Blue, activeTrackColor = Color.Blue.copy(alpha = 0.5f))
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (primaryHex.startsWith("#") && primaryHex.length == 7 &&
+                                    secondaryHex.startsWith("#") && secondaryHex.length == 7 &&
+                                    bgHex.startsWith("#") && bgHex.length == 7) {
+                                    viewModel.updateCustomColorsAll(primaryHex, secondaryHex, bgHex)
+                                    android.widget.Toast.makeText(context, "Custom theme colors applied!", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, "Please enter valid Hex codes (e.g. #005FAF)", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Apply Custom Colors", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HelpGuideScreen(
+    onBack: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var expandedHelpItem by remember { mutableStateOf<String?>(null) }
+
+    val helpItems = listOf(
+        Triple(Icons.Rounded.AccountBalance, "Accounts",
+            "Accounts represent where your money is stored — e.g., Cash, Bank Account, or Wallet. Go to the Accounts tab to create new accounts, set opening balances, and track each account's current balance separately. All transactions are linked to an account."),
+        Triple(Icons.Rounded.Receipt, "Transactions",
+            "Transactions are records of money coming in (income) or going out (expense). Tap the '+' button on the Home screen to add a new transaction. You can assign a category, account, date, note, and tags. Transactions feed your analytics, budgets, and balances."),
+        Triple(Icons.Rounded.Category, "Categories",
+            "Categories organize your income and expenses into groups like Food, Travel, Salary, etc. You can create, edit, and reorder categories from More > Categories. Each transaction is assigned one category to help with budget tracking and analytics."),
+        Triple(Icons.Rounded.PieChart, "Analytics",
+            "The Analytics screen shows visual breakdowns of your spending and income over time. Use the Expense / Income toggle to switch views. Filter by date range, category, or account to drill down into specific areas. Charts update in real-time based on your filters."),
+        Triple(Icons.Rounded.Savings, "Budgets",
+            "Budgets let you set monthly or date-range spending limits per category. If you exceed a budget, the app notifies you and highlights transactions in red. Create budgets from More > Budgets. Budget progress is shown in the home summary card."),
+        Triple(Icons.Rounded.Repeat, "Recurring Bills",
+            "Recurring bills auto-create transactions on a schedule — daily, weekly, monthly, or yearly. Set them up from More > Schedule Repeating. You must select an account for the recurring rule. On each trigger date, a new transaction entry is automatically created."),
+        Triple(Icons.Rounded.People, "Partner Sharing",
+            "Partner Sharing lets you link your PiggyBag account with another user's profile to view each other's transaction journals in read-only mode. Both users must have a PiggyBag cloud account. Share your 8-character Partner Code with your partner under More > Partner Sharing."),
+        Triple(Icons.Rounded.Groups, "Group Expense Split",
+            "Use Group Expense Split to track shared expenses with friends or family. Create a group, add members, and record group expenses. The app calculates who owes what. Cloud users can create groups; guest users can join existing groups using a 6-digit PIN."),
+        Triple(Icons.Rounded.MonetizationOn, "Debt Tracker",
+            "The Debt Tracker records money you lent or borrowed. For each entry, set the person's name, amount, date, and optionally a reminder. The tracker shows pending and settled debts. You can mark debts as settled once repaid. Find it under More > Debt Tracker."),
+        Triple(Icons.Rounded.Cloud, "Cloud Sync",
+            "PiggyBag Cloud Sync keeps your data backed up securely in the cloud. Sign up or log in from More > Account. Once logged in, your transactions sync automatically when you're online. You can also sync data with partner journals through the Shared Journals feature."),
+        Triple(Icons.Rounded.Palette, "Theme & Appearance",
+            "Customize the look and feel of PiggyBag from More > Theme & Appearance. Choose from preset color palettes like Nord, Dracula, or Catppuccin, or set your own custom primary, secondary, and background colors. You can also change typography fonts.")
+    )
+
+    val filteredHelpItems = remember(searchQuery) {
+        if (searchQuery.isBlank()) {
+            helpItems
+        } else {
+            helpItems.filter {
+                it.second.contains(searchQuery, ignoreCase = true) ||
+                        it.third.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Help Center & Guides", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Search field
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search help topics...") },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                        }
+                    }
+                } else null,
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+
+            if (filteredHelpItems.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Rounded.SearchOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No matching help topics found",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        filteredHelpItems.forEachIndexed { index, (icon, title, desc) ->
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedHelpItem =
+                                            if (expandedHelpItem == title) null else title
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(10.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = if (expandedHelpItem == title) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                if (expandedHelpItem == title) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = desc,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(start = 48.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }
